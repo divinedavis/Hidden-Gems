@@ -9,6 +9,9 @@ import SwiftUI
 
 struct FeedView: View {
     @State private var recommendations = Recommendation.samples
+    @State private var isRefreshing = false
+    @Environment(SavedRestaurantsManager.self) private var savedManager
+    @Environment(LikesManager.self) private var likesManager
     
     var body: some View {
         NavigationStack {
@@ -21,47 +24,63 @@ struct FeedView: View {
                 }
                 .padding(.horizontal)
             }
+            .refreshable {
+                await refreshFeed()
+            }
             .navigationTitle("Feed")
             .background(Color(.systemGroupedBackground))
         }
+    }
+    
+    private func refreshFeed() async {
+        // Simulate network delay
+        try? await Task.sleep(for: .seconds(1))
+        
+        // In a real app, you would fetch new data from your backend here
+        // For now, we'll just shuffle the existing recommendations to show it's working
+        recommendations = Recommendation.samples.shuffled()
     }
 }
 
 struct RecommendationCard: View {
     let recommendation: Recommendation
-    @State private var isSaved = false
+    @Environment(SavedRestaurantsManager.self) private var savedManager
+    @Environment(LikesManager.self) private var likesManager
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // User info header
-            HStack {
-                Circle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 36, height: 36)
-                    .overlay {
-                        Image(systemName: "person.fill")
-                            .foregroundStyle(.gray)
+            NavigationLink(destination: ProfileView(user: recommendation.user)) {
+                HStack {
+                    Circle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 36, height: 36)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .foregroundStyle(.gray)
+                        }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(recommendation.user.name)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text(recommendation.user.username)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(recommendation.user.name)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    Text(recommendation.user.username)
+                    
+                    Spacer()
+                    
+                    Text(recommendation.date, style: .relative)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                
-                Spacer()
-                
-                Text(recommendation.date, style: .relative)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+            .buttonStyle(.plain)
             .padding()
             
             // Restaurant image
-            RoundedRectangle(cornerRadius: 0)
+            Rectangle()
                 .fill(Color.gray.opacity(0.2))
                 .aspectRatio(4/3, contentMode: .fit)
                 .overlay {
@@ -69,7 +88,7 @@ struct RecommendationCard: View {
                         .font(.largeTitle)
                         .foregroundStyle(.gray)
                 }
-            
+
             // Restaurant info
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -77,37 +96,13 @@ struct RecommendationCard: View {
                         Text(recommendation.restaurant.name)
                             .font(.title3)
                             .fontWeight(.bold)
-                        
-                        HStack(spacing: 4) {
-                            Text(recommendation.restaurant.cuisine)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Text("•")
-                                .foregroundStyle(.secondary)
-                            Text(String(repeating: "$", count: recommendation.restaurant.priceLevel))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        HStack(spacing: 4) {
-                            Image(systemName: "mappin.circle.fill")
-                                .font(.caption)
-                            Text(recommendation.restaurant.location)
-                                .font(.caption)
-                        }
-                        .foregroundStyle(.secondary)
+
+                        RestaurantMetaInfo(restaurant: recommendation.restaurant)
                     }
-                    
+
                     Spacer()
-                    
-                    HStack(spacing: 4) {
-                        Image(systemName: "star.fill")
-                            .font(.caption)
-                            .foregroundStyle(.yellow)
-                        Text(String(format: "%.1f", recommendation.restaurant.rating))
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                    }
+
+                    RatingBadge(rating: recommendation.restaurant.rating, font: .subheadline)
                 }
                 
                 // User's note
@@ -120,10 +115,23 @@ struct RecommendationCard: View {
                 // Action buttons
                 HStack(spacing: 24) {
                     Button {
-                        // Like action
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            likesManager.toggleLike(recommendation)
+                        }
                     } label: {
-                        Image(systemName: "heart")
-                            .font(.title3)
+                        HStack(spacing: 4) {
+                            Image(systemName: likesManager.isLiked(recommendation) ? "heart.fill" : "heart")
+                                .font(.title3)
+                                .foregroundStyle(likesManager.isLiked(recommendation) ? .red : .primary)
+                                .scaleEffect(likesManager.isLiked(recommendation) ? 1.15 : 1.0)
+
+                            let count = likesManager.likeCount(for: recommendation)
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                            }
+                        }
                     }
                     
                     Button {
@@ -143,10 +151,13 @@ struct RecommendationCard: View {
                     Spacer()
                     
                     Button {
-                        isSaved.toggle()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            savedManager.toggleSave(recommendation.restaurant)
+                        }
                     } label: {
-                        Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                        Image(systemName: savedManager.isSaved(recommendation.restaurant) ? "bookmark.fill" : "bookmark")
                             .font(.title3)
+                            .scaleEffect(savedManager.isSaved(recommendation.restaurant) ? 1.15 : 1.0)
                     }
                 }
                 .foregroundStyle(.primary)

@@ -8,50 +8,53 @@
 import SwiftUI
 
 struct SavedView: View {
-    @State private var savedRestaurants = Restaurant.samples
+    @Environment(SavedRestaurantsManager.self) private var savedManager
+    @Environment(LikesManager.self) private var likesManager
     
     var body: some View {
         NavigationStack {
-            if savedRestaurants.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "bookmark")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.secondary)
-                    
-                    Text("No Saved Places")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    Text("Bookmark restaurants to save them here")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(savedRestaurants) { restaurant in
-                            SavedRestaurantCard(restaurant: restaurant)
-                        }
+            Group {
+                if savedManager.savedRestaurants.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "bookmark")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.secondary)
+                        
+                        Text("No Saved Places")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        Text("Bookmark restaurants to save them here")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
                     .padding()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(savedManager.savedRestaurants) { restaurant in
+                                SavedRestaurantCard(restaurant: restaurant)
+                            }
+                        }
+                        .padding()
+                    }
                 }
             }
-            
-            navigationTitle("Saved")
+            .navigationTitle("Saved")
         }
     }
 }
 
 struct SavedRestaurantCard: View {
     let restaurant: Restaurant
-    @State private var isSaved = true
+    @Environment(SavedRestaurantsManager.self) private var savedManager
+    @Environment(LikesManager.self) private var likesManager
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Restaurant image
-            RoundedRectangle(cornerRadius: 0)
+            Rectangle()
                 .fill(Color.gray.opacity(0.2))
                 .aspectRatio(16/9, contentMode: .fit)
                 .overlay {
@@ -59,7 +62,7 @@ struct SavedRestaurantCard: View {
                         .font(.largeTitle)
                         .foregroundStyle(.gray)
                 }
-            
+
             // Restaurant info
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -67,47 +70,25 @@ struct SavedRestaurantCard: View {
                         Text(restaurant.name)
                             .font(.title3)
                             .fontWeight(.bold)
-                        
-                        HStack(spacing: 4) {
-                            Text(restaurant.cuisine)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Text("•")
-                                .foregroundStyle(.secondary)
-                            Text(String(repeating: "$", count: restaurant.priceLevel))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        HStack(spacing: 4) {
-                            Image(systemName: "mappin.circle.fill")
-                                .font(.caption)
-                            Text(restaurant.location)
-                                .font(.caption)
-                        }
-                        .foregroundStyle(.secondary)
+
+                        RestaurantMetaInfo(restaurant: restaurant)
                     }
-                    
+
                     Spacer()
-                    
+
                     Button {
-                        isSaved.toggle()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            savedManager.unsave(restaurant)
+                        }
                     } label: {
-                        Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                        Image(systemName: "bookmark.fill")
                             .font(.title3)
                             .foregroundStyle(.primary)
                     }
                 }
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "star.fill")
-                        .font(.caption)
-                        .foregroundStyle(.yellow)
-                    Text(String(format: "%.1f", restaurant.rating))
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                }
-                .padding(.top, 4)
+
+                RatingBadge(rating: restaurant.rating, font: .subheadline)
+                    .padding(.top, 4)
             }
             .padding()
         }

@@ -10,6 +10,8 @@ import SwiftUI
 struct SearchView: View {
     @State private var searchText = ""
     @State private var restaurants = Restaurant.samples
+    @Environment(SavedRestaurantsManager.self) private var savedManager
+    @Environment(LikesManager.self) private var likesManager
     
     var filteredRestaurants: [Restaurant] {
         if searchText.isEmpty {
@@ -56,34 +58,10 @@ struct RestaurantRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(restaurant.name)
                     .font(.headline)
-                
-                HStack(spacing: 4) {
-                    Text(restaurant.cuisine)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("•")
-                        .foregroundStyle(.secondary)
-                    Text(String(repeating: "$", count: restaurant.priceLevel))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "mappin.circle.fill")
-                        .font(.caption)
-                    Text(restaurant.location)
-                        .font(.caption)
-                }
-                .foregroundStyle(.secondary)
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "star.fill")
-                        .font(.caption)
-                        .foregroundStyle(.yellow)
-                    Text(String(format: "%.1f", restaurant.rating))
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                }
+
+                RestaurantMetaInfo(restaurant: restaurant)
+
+                RatingBadge(rating: restaurant.rating)
             }
             
             Spacer()
