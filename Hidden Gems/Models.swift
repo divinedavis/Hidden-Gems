@@ -28,6 +28,18 @@ struct Recommendation: Identifiable {
     let isSaved: Bool
 }
 
+struct Comment: Identifiable, Equatable {
+    let id = UUID()
+    let user: User
+    let text: String
+    let date: Date
+    var likeCount: Int = 0
+    
+    static func == (lhs: Comment, rhs: Comment) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
 struct User: Identifiable, Equatable, Hashable {
     let id = UUID()
     let name: String
@@ -131,53 +143,115 @@ extension Recommendation {
 @Observable
 class SavedRestaurantsManager {
     var savedRestaurants: [Restaurant] = []
-    // UUID set for O(1) membership checks
-    private var savedIDs: Set<UUID> = []
-
+    
     func isSaved(_ restaurant: Restaurant) -> Bool {
-        savedIDs.contains(restaurant.id)
+        savedRestaurants.contains { $0.id == restaurant.id }
     }
-
+    
     func toggleSave(_ restaurant: Restaurant) {
-        if savedIDs.contains(restaurant.id) {
-            unsave(restaurant)
+        if let index = savedRestaurants.firstIndex(where: { $0.id == restaurant.id }) {
+            savedRestaurants.remove(at: index)
         } else {
-            save(restaurant)
+            savedRestaurants.append(restaurant)
         }
     }
-
+    
     func save(_ restaurant: Restaurant) {
-        guard !savedIDs.contains(restaurant.id) else { return }
-        savedRestaurants.append(restaurant)
-        savedIDs.insert(restaurant.id)
+        if !isSaved(restaurant) {
+            savedRestaurants.append(restaurant)
+        }
     }
-
+    
     func unsave(_ restaurant: Restaurant) {
         savedRestaurants.removeAll { $0.id == restaurant.id }
-        savedIDs.remove(restaurant.id)
     }
 }
 
 // Observable class to manage likes across the app
 @Observable
 class LikesManager {
-    // One like per user — count is always 0 or 1, derived from set membership
-    private var likedIDs: Set<UUID> = []
-
+    var likedRecommendations: Set<UUID> = []
+    var likeCounts: [UUID: Int] = [:]
+    
     func isLiked(_ recommendation: Recommendation) -> Bool {
-        likedIDs.contains(recommendation.id)
+        likedRecommendations.contains(recommendation.id)
     }
-
+    
     func toggleLike(_ recommendation: Recommendation) {
-        if likedIDs.contains(recommendation.id) {
-            likedIDs.remove(recommendation.id)
+        if likedRecommendations.contains(recommendation.id) {
+            likedRecommendations.remove(recommendation.id)
+            likeCounts[recommendation.id, default: 0] -= 1
         } else {
-            likedIDs.insert(recommendation.id)
+            likedRecommendations.insert(recommendation.id)
+            likeCounts[recommendation.id, default: 0] += 1
         }
     }
-
+    
     func likeCount(for recommendation: Recommendation) -> Int {
-        likedIDs.contains(recommendation.id) ? 1 : 0
+        likeCounts[recommendation.id, default: 0]
+    }
+}
+
+// Observable class to manage comments across the app
+@Observable
+class CommentsManager {
+    var comments: [UUID: [Comment]] = [:]
+    var commentLikes: [UUID: Set<UUID>] = [:] // commentId: Set of user IDs who liked it
+    
+    func getComments(for recommendation: Recommendation) -> [Comment] {
+        let allComments = comments[recommendation.id, default: []]
+        // Sort by like count (descending), then by date (most recent first)
+        return allComments.sorted { comment1, comment2 in
+            if comment1.likeCount != comment2.likeCount {
+                return comment1.likeCount > comment2.likeCount
+            }
+            return comment1.date > comment2.date
+        }
+    }
+    
+    func getTopComments(for recommendation: Recommendation, limit: Int = 3) -> [Comment] {
+        let sorted = getComments(for: recommendation)
+        return Array(sorted.prefix(limit))
+    }
+    
+    func addComment(_ text: String, to recommendation: Recommendation, by user: User) {
+        let comment = Comment(user: user, text: text, date: Date(), likeCount: 0)
+        comments[recommendation.id, default: []].append(comment)
+    }
+    
+    func commentCount(for recommendation: Recommendation) -> Int {
+        comments[recommendation.id, default: []].count
+    }
+    
+    func isCommentLiked(_ comment: Comment, by userId: UUID) -> Bool {
+        commentLikes[comment.id, default: []].contains(userId)
+    }
+    
+    func toggleCommentLike(_ comment: Comment, by userId: UUID) {
+        if commentLikes[comment.id, default: []].contains(userId) {
+            // Unlike
+            commentLikes[comment.id]?.remove(userId)
+            updateCommentLikeCount(comment, increment: false)
+        } else {
+            // Like
+            commentLikes[comment.id, default: []].insert(userId)
+            updateCommentLikeCount(comment, increment: true)
+        }
+    }
+    
+    private func updateCommentLikeCount(_ comment: Comment, increment: Bool) {
+        // Find and update the comment in all recommendations
+        for (recommendationId, var commentsList) in comments {
+            if let index = commentsList.firstIndex(where: { $0.id == comment.id }) {
+                commentsList[index].likeCount += increment ? 1 : -1
+                comments[recommendationId] = commentsList
+                break
+            }
+        }
+    }
+    
+    func getCommentLikeCount(_ comment: Comment) -> Int {
+        commentLikes[comment.id, default: []].count
     }
 }
 
@@ -185,7 +259,6 @@ class LikesManager {
 @Observable
 class FollowManager {
     var followedUsers: Set<UUID> = []
-    // The logged-in user — single source of truth shared across the app
     var currentUser: User = User.sarah
 
     func isFollowing(_ user: User) -> Bool {
@@ -200,4 +273,3 @@ class FollowManager {
         }
     }
 }
-

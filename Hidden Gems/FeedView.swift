@@ -12,6 +12,7 @@ struct FeedView: View {
     @State private var isRefreshing = false
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
+    @Environment(CommentsManager.self) private var commentsManager
     
     var body: some View {
         NavigationStack {
@@ -46,6 +47,8 @@ struct RecommendationCard: View {
     let recommendation: Recommendation
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
+    @Environment(CommentsManager.self) private var commentsManager
+    @State private var showingComments = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -135,10 +138,19 @@ struct RecommendationCard: View {
                     }
                     
                     Button {
-                        // Comment action
+                        showingComments = true
                     } label: {
-                        Image(systemName: "bubble.right")
-                            .font(.title3)
+                        HStack(spacing: 4) {
+                            Image(systemName: "bubble.right")
+                                .font(.title3)
+                            
+                            let count = commentsManager.commentCount(for: recommendation)
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                            }
+                        }
                     }
                     
                     Button {
@@ -168,6 +180,10 @@ struct RecommendationCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .sheet(isPresented: $showingComments) {
+            CommentsView(recommendation: recommendation)
+                .environment(commentsManager)
+        }
     }
 }
 
