@@ -6,9 +6,6 @@ An iOS app that gives locals better insight into what restaurants and cafes are 
 
 <p align="center">
   <img src="screenshots/feed_hero.png" width="220" alt="Feed"/>
-  <img src="screenshots/search.png" width="220" alt="Search"/>
-  <img src="screenshots/profile.png" width="220" alt="Profile"/>
-  <img src="screenshots/comments.png" width="220" alt="Comments"/>
 </p>
 
 ## Features
