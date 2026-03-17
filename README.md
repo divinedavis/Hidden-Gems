@@ -5,7 +5,7 @@ An iOS app that gives locals better insight into what restaurants and cafes are 
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/feed_hero.png" width="220" alt="Feed"/>
+  <img src="screenshots/feed_hero.png" width="440" alt="Feed"/>
 </p>
 
 ## Features
