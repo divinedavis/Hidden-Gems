@@ -2,12 +2,23 @@
 
 An iOS app that gives locals better insight into what restaurants and cafes are around them — discover and share under-the-radar recommendations from people you trust.
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/feed_hero.png" width="220" alt="Feed"/>
+  <img src="screenshots/search.png" width="220" alt="Search"/>
+  <img src="screenshots/profile.png" width="220" alt="Profile"/>
+  <img src="screenshots/comments.png" width="220" alt="Comments"/>
+</p>
+
 ## Features
 
-- **Feed** — Browse restaurant recommendations from people you follow
+- **Feed** — Browse restaurant recommendations from people you follow, with likes, comments, and saves
 - **Search** — Find hidden gem restaurants by name, cuisine, or location
 - **Saved** — Bookmark restaurants you want to try
-- **Profile** — View your recommendations and follower/following counts
+- **Profile** — View your recommendations and manage followers/following
+- **Comments** — Comment on posts and like other people's comments
+- **Follow** — Follow other users and see their recommendations in your feed
 
 ## Tech Stack
 
@@ -19,13 +30,16 @@ An iOS app that gives locals better insight into what restaurants and cafes are 
 
 ```
 Hidden Gems/
-├── Hidden_GemsApp.swift   # App entry point
-├── ContentView.swift      # Root tab navigation
-├── FeedView.swift         # Recommendation feed
-├── SearchView.swift       # Search screen
-├── SavedView.swift        # Saved restaurants
-├── ProfileView.swift      # User profile
-└── Models.swift           # Data models (Restaurant, User, Recommendation)
+├── Hidden_GemsApp.swift      # App entry point
+├── ContentView.swift         # Root tab navigation + environment setup
+├── FeedView.swift            # Recommendation feed with likes, comments, saves
+├── CommentsView.swift        # Comments sheet with post image preview
+├── SearchView.swift          # Search screen
+├── SavedView.swift           # Saved restaurants
+├── ProfileView.swift         # User profile with follow/unfollow
+├── CreatePostView.swift      # Create a new recommendation post
+├── SharedComponents.swift    # Reusable UI components
+└── Models.swift              # Data models and state managers
 ```
 
 ## Getting Started
