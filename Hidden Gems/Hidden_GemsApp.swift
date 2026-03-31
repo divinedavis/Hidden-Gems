@@ -7,33 +7,46 @@
 
 import SwiftUI
 
+enum AppScreen {
+    case landing, auth
+}
+
 @main
 struct Hidden_GemsApp: App {
     @State private var authManager = AuthManager()
     @State private var locationManager = LocationManager()
-    @State private var showLanding = true
+    @State private var screen: AppScreen = .landing
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if authManager.isSignedIn {
-                    ContentView()
-                        .environment(authManager)
-                        .onAppear {
-                            locationManager.requestPermission()
-                        }
-                } else if authManager.needsProfileSetup {
-                    ProfileSetupView()
-                        .environment(authManager)
-                } else if showLanding {
-                    LandingView {
-                        withAnimation(.easeInOut(duration: 0.4)) {
-                            showLanding = false
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                Group {
+                    if authManager.isSignedIn {
+                        ContentView()
+                            .environment(authManager)
+                            .onAppear {
+                                locationManager.requestPermission()
+                            }
+                    } else if authManager.needsProfileSetup {
+                        ProfileSetupView()
+                            .environment(authManager)
+                    } else {
+                        switch screen {
+                        case .landing:
+                            LandingView {
+                                withAnimation(.easeInOut(duration: 0.4)) {
+                                    screen = .auth
+                                }
+                            }
+                            .transition(.opacity)
+                        case .auth:
+                            SignInView()
+                                .environment(authManager)
+                                .transition(.opacity)
                         }
                     }
-                } else {
-                    SignInView()
-                        .environment(authManager)
                 }
             }
             .environment(locationManager)

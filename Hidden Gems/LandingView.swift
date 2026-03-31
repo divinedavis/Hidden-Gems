@@ -32,7 +32,8 @@ struct AnimatedRing: View {
             .scaleEffect(scale)
             .opacity(opacity)
             .rotationEffect(.degrees(rotation))
-            .onAppear {
+            .task {
+                try? await Task.sleep(nanoseconds: 100_000_000)
                 withAnimation(
                     .easeOut(duration: 1.2)
                     .delay(Double(index) * 0.15)
@@ -71,7 +72,8 @@ struct PulsingGlow: View {
             .frame(width: size, height: size)
             .scaleEffect(scale)
             .opacity(opacity)
-            .onAppear {
+            .task {
+                try? await Task.sleep(nanoseconds: 100_000_000)
                 withAnimation(
                     .easeInOut(duration: 3)
                     .repeatForever(autoreverses: true)
@@ -202,24 +204,28 @@ struct LandingView: View {
                 .padding(.bottom, 50)
             }
         }
-        .onAppear {
+        .task {
+            try? await Task.sleep(nanoseconds: 200_000_000)
             // Gem icon entrance
-            withAnimation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.2)) {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.6)) {
                 gemScale = 1.0
                 gemOpacity = 1.0
                 gemRotation = 0
             }
+            try? await Task.sleep(nanoseconds: 300_000_000)
             // Title entrance
-            withAnimation(.easeOut(duration: 0.8).delay(0.5)) {
+            withAnimation(.easeOut(duration: 0.8)) {
                 titleOpacity = 1.0
                 titleOffset = 0
             }
+            try? await Task.sleep(nanoseconds: 300_000_000)
             // Subtitle entrance
-            withAnimation(.easeOut(duration: 0.8).delay(0.8)) {
+            withAnimation(.easeOut(duration: 0.8)) {
                 subtitleOpacity = 1.0
             }
+            try? await Task.sleep(nanoseconds: 300_000_000)
             // Button entrance
-            withAnimation(.easeOut(duration: 0.8).delay(1.1)) {
+            withAnimation(.easeOut(duration: 0.8)) {
                 buttonOpacity = 1.0
                 buttonOffset = 0
             }
