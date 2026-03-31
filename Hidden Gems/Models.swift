@@ -7,9 +7,10 @@
 
 import Foundation
 import SwiftUI
+import Supabase
 
 struct Restaurant: Identifiable {
-    let id = UUID()
+    var id: UUID = UUID()
     let name: String
     let cuisine: String
     let location: String
@@ -20,7 +21,7 @@ struct Restaurant: Identifiable {
 }
 
 struct Recommendation: Identifiable {
-    let id = UUID()
+    var id: UUID = UUID()
     let restaurant: Restaurant
     let user: User
     let note: String
@@ -29,31 +30,97 @@ struct Recommendation: Identifiable {
 }
 
 struct Comment: Identifiable, Equatable {
-    let id = UUID()
+    var id: UUID = UUID()
     let user: User
     let text: String
     let date: Date
     var likeCount: Int = 0
-    
+
     static func == (lhs: Comment, rhs: Comment) -> Bool {
         lhs.id == rhs.id
     }
 }
 
 struct User: Identifiable, Equatable, Hashable {
-    let id = UUID()
+    var id: UUID = UUID()
     let name: String
     let username: String
     let profileImageURL: String
     let followersCount: Int
     let followingCount: Int
-    
+
     static func == (lhs: User, rhs: User) -> Bool {
         lhs.id == rhs.id
     }
-    
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+}
+
+// Codable struct matching the Supabase 'feed' view
+struct SupabaseFeedPost: Codable {
+    let id: UUID
+    let note: String?
+    let createdAt: Date
+    let userId: UUID
+    let userName: String
+    let username: String
+    let profileImageUrl: String?
+    let restaurantId: UUID
+    let restaurantName: String
+    let cuisine: String?
+    let location: String?
+    let rating: Double?
+    let priceLevel: Int?
+    let imageUrl: String?
+    let likeCount: Int
+    let commentCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, note, username, cuisine, location, rating
+        case createdAt = "created_at"
+        case userId = "user_id"
+        case userName = "user_name"
+        case profileImageUrl = "profile_image_url"
+        case restaurantId = "restaurant_id"
+        case restaurantName = "restaurant_name"
+        case priceLevel = "price_level"
+        case imageUrl = "image_url"
+        case likeCount = "like_count"
+        case commentCount = "comment_count"
+    }
+
+    func toRecommendation() -> Recommendation {
+        var user = User(
+            name: userName,
+            username: username,
+            profileImageURL: profileImageUrl ?? "",
+            followersCount: 0,
+            followingCount: 0
+        )
+        user.id = userId
+
+        var restaurant = Restaurant(
+            name: restaurantName,
+            cuisine: cuisine ?? "",
+            location: location ?? "",
+            imageURL: imageUrl ?? "",
+            rating: rating ?? 0,
+            priceLevel: priceLevel ?? 1,
+            description: ""
+        )
+        restaurant.id = restaurantId
+
+        var rec = Recommendation(
+            restaurant: restaurant,
+            user: user,
+            note: note ?? "",
+            date: createdAt,
+            isSaved: false
+        )
+        rec.id = id
+        return rec
     }
 }
 
@@ -139,6 +206,35 @@ extension Recommendation {
     
     static let samples = [sample1, sample2, sample3]
 }
+// Observable class to manage the feed recommendations across the app
+@Observable
+class RecommendationsManager {
+    var recommendations: [Recommendation] = []
+    var isLoading = false
+
+    func fetchFeed() async {
+        isLoading = true
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let posts: [SupabaseFeedPost] = try await supabase
+                .from("feed")
+                .select()
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+            recommendations = posts.map { $0.toRecommendation() }
+        } catch {
+            print("Feed fetch error: \(error)")
+        }
+        isLoading = false
+    }
+
+    func addRecommendation(_ recommendation: Recommendation) {
+        recommendations.insert(recommendation, at: 0)
+    }
+}
+
 // Observable class to manage saved restaurants across the app
 @Observable
 class SavedRestaurantsManager {

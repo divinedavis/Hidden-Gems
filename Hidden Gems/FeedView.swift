@@ -8,17 +8,17 @@
 import SwiftUI
 
 struct FeedView: View {
-    @State private var recommendations = Recommendation.samples
-    @State private var isRefreshing = false
+    @Environment(RecommendationsManager.self) private var recommendationsManager
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
     @Environment(CommentsManager.self) private var commentsManager
+    @Binding var showingCreatePost: Bool
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(recommendations) { recommendation in
+                    ForEach(recommendationsManager.recommendations) { recommendation in
                         RecommendationCard(recommendation: recommendation)
                             .padding(.bottom, 12)
                     }
@@ -28,18 +28,51 @@ struct FeedView: View {
             .refreshable {
                 await refreshFeed()
             }
-            .navigationTitle("Feed")
+            .task {
+                await refreshFeed()
+            }
+            .navigationTitle("Hidden Gems")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gem.fill")
+                            .font(.title3)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.blue, .purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Text("Hidden Gems")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingCreatePost = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.blue, .purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                }
+            }
             .background(Color(.systemGroupedBackground))
         }
     }
     
     private func refreshFeed() async {
-        // Simulate network delay
-        try? await Task.sleep(for: .seconds(1))
-        
-        // In a real app, you would fetch new data from your backend here
-        // For now, we'll just shuffle the existing recommendations to show it's working
-        recommendations = Recommendation.samples.shuffled()
+        await recommendationsManager.fetchFeed()
     }
 }
 
@@ -188,5 +221,5 @@ struct RecommendationCard: View {
 }
 
 #Preview {
-    FeedView()
+    FeedView(showingCreatePost: .constant(false))
 }

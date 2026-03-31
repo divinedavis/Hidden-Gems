@@ -9,17 +9,20 @@ import SwiftUI
 
 struct ProfileView: View {
     var user: User? = nil // Optional user parameter - if nil, show current user
-    @State private var currentUser = User.sarah
     @State private var myRecommendations: [Recommendation] = []
+    @State private var showingSettings = false
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
-    
+    @Environment(FollowManager.self) private var followManager
+    @Environment(AuthManager.self) private var authManager
+    @Environment(RecommendationsManager.self) private var recommendationsManager
+
     private var displayUser: User {
-        user ?? currentUser
+        user ?? authManager.currentUser
     }
-    
+
     private var isOwnProfile: Bool {
-        user == nil || user?.id == currentUser.id
+        user == nil || user?.id == authManager.currentUser.id
     }
     
     var body: some View {
@@ -68,16 +71,19 @@ struct ProfileView: View {
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 40)
                     } else {
+                        let isFollowing = followManager.isFollowing(displayUser)
                         Button {
-                            // Follow action
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                followManager.toggleFollow(displayUser)
+                            }
                         } label: {
-                            Text("Follow")
+                            Text(isFollowing ? "Following" : "Follow")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
-                                .background(Color.accentColor)
-                                .foregroundStyle(.white)
+                                .background(isFollowing ? Color(.systemGray5) : Color.accentColor)
+                                .foregroundStyle(isFollowing ? Color.primary : Color.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .padding(.horizontal, 40)
@@ -141,12 +147,18 @@ struct ProfileView: View {
             if isOwnProfile {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        // Settings action
+                        showingSettings = true
                     } label: {
                         Image(systemName: "gearshape")
                     }
                 }
             }
+        }
+        .confirmationDialog("Settings", isPresented: $showingSettings) {
+            Button("Log Out", role: .destructive) {
+                authManager.signOut()
+            }
+            Button("Cancel", role: .cancel) { }
         }
         .onAppear {
             loadRecommendations()
@@ -154,7 +166,7 @@ struct ProfileView: View {
     }
     
     private func loadRecommendations() {
-        myRecommendations = Recommendation.samples.filter { $0.user.id == displayUser.id }
+        myRecommendations = recommendationsManager.recommendations.filter { $0.user.id == displayUser.id }
     }
 }
 

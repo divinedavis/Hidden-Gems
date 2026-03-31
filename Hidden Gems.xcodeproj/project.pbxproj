@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		2AD4DE4E730043BBB3538374 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = FBC860B77CDE475586E5828E /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		162541BF2F687B5E005EDA7F /* Hidden Gems.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Hidden Gems.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2AD4DE4E730043BBB3538374 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = "Hidden Gems";
 			packageProductDependencies = (
+				FBC860B77CDE475586E5828E /* Supabase */,
 			);
 			productName = "Hidden Gems";
 			productReference = 162541BF2F687B5E005EDA7F /* Hidden Gems.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 162541B62F687B5E005EDA7F;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3C70ABA355EA4034A2819F1D /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 162541C02F687B5E005EDA7F /* Products */;
 			projectDirPath = "";
@@ -328,6 +337,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		3C70ABA355EA4034A2819F1D /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FBC860B77CDE475586E5828E /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C70ABA355EA4034A2819F1D /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 162541B72F687B5E005EDA7F /* Project object */;
 }

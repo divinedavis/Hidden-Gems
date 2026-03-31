@@ -10,6 +10,7 @@ import PhotosUI
 
 struct CreatePostView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(RecommendationsManager.self) private var recommendationsManager
     @State private var selectedRestaurant: Restaurant?
     @State private var caption = ""
     @State private var selectedPhotos: [PhotosPickerItem] = []
@@ -181,8 +182,15 @@ struct CreatePostView: View {
     }
     
     private func createPost() {
-        // TODO: Implement post creation
-        // For now, just dismiss
+        guard let restaurant = selectedRestaurant else { return }
+        let newPost = Recommendation(
+            restaurant: restaurant,
+            user: User.sarah,
+            note: caption,
+            date: Date(),
+            isSaved: false
+        )
+        recommendationsManager.addRecommendation(newPost)
         dismiss()
     }
     
