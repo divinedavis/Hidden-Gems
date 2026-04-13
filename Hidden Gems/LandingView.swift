@@ -33,10 +33,9 @@ struct AnimatedRing: View {
             .opacity(opacity)
             .rotationEffect(.degrees(rotation))
             .task {
-                try? await Task.sleep(nanoseconds: 100_000_000)
                 withAnimation(
-                    .easeOut(duration: 1.2)
-                    .delay(Double(index) * 0.15)
+                    .easeOut(duration: 0.7)
+                    .delay(Double(index) * 0.06)
                 ) {
                     scale = 1.0
                     opacity = 0.6 - Double(index) * 0.08
@@ -205,27 +204,19 @@ struct LandingView: View {
             }
         }
         .task {
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            // Gem icon entrance
-            withAnimation(.spring(response: 0.8, dampingFraction: 0.6)) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                 gemScale = 1.0
                 gemOpacity = 1.0
                 gemRotation = 0
             }
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            // Title entrance
-            withAnimation(.easeOut(duration: 0.8)) {
+            withAnimation(.easeOut(duration: 0.45).delay(0.1)) {
                 titleOpacity = 1.0
                 titleOffset = 0
             }
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            // Subtitle entrance
-            withAnimation(.easeOut(duration: 0.8)) {
+            withAnimation(.easeOut(duration: 0.45).delay(0.2)) {
                 subtitleOpacity = 1.0
             }
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            // Button entrance
-            withAnimation(.easeOut(duration: 0.8)) {
+            withAnimation(.easeOut(duration: 0.45).delay(0.25)) {
                 buttonOpacity = 1.0
                 buttonOffset = 0
             }
