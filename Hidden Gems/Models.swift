@@ -216,7 +216,17 @@ class RecommendationsManager {
         isLoading = true
         do {
             let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
+            let withFractional = ISO8601DateFormatter()
+            withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let noFractional = ISO8601DateFormatter()
+            noFractional.formatOptions = [.withInternetDateTime]
+            decoder.dateDecodingStrategy = .custom { d in
+                let c = try d.singleValueContainer()
+                let s = try c.decode(String.self)
+                if let date = withFractional.date(from: s) { return date }
+                if let date = noFractional.date(from: s) { return date }
+                throw DecodingError.dataCorruptedError(in: c, debugDescription: "Invalid ISO8601 date: \(s)")
+            }
             let posts: [SupabaseFeedPost] = try await supabase
                 .from("feed")
                 .select()
