@@ -61,16 +61,15 @@ class AuthManager {
         let username = pendingUsername
 
         do {
-            // Insert into users table — id matches Supabase auth uid
+            // Row is auto-created by the on_auth_user_created trigger.
+            // We just fill in the details the user entered.
             try await supabase
                 .from("users")
-                .insert([
-                    "id": authId.uuidString,
+                .update([
                     "name": fullName,
-                    "username": username,
-                    "email": pendingEmail,
-                    "profile_image_url": ""
+                    "username": username
                 ])
+                .eq("id", value: authId.uuidString)
                 .execute()
 
             var user = User(
@@ -433,6 +432,11 @@ struct SignUpView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .navigationBarBackButtonHidden(false)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                focusedField = .username
+            }
+        }
     }
 
     private func handleSignUp() {
@@ -538,6 +542,11 @@ struct ProfileSetupView: View {
             Spacer()
         }
         .scrollDismissesKeyboard(.interactively)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                focusedField = .firstName
+            }
+        }
     }
 
     private func handleContinue() {
