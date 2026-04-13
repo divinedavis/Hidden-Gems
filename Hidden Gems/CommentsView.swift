@@ -11,9 +11,11 @@ struct CommentsView: View {
     let recommendation: Recommendation
     @Environment(\.dismiss) private var dismiss
     @Environment(CommentsManager.self) private var commentsManager
+    @Environment(AuthManager.self) private var authManager
     @State private var newCommentText = ""
-    @State private var currentUser = User.sarah
     @State private var showAllComments = false
+
+    private var currentUser: User { authManager.currentUser }
     @FocusState private var commentFieldFocused: Bool
     @State private var keyboardHeight: CGFloat = 0
 
@@ -31,32 +33,11 @@ struct CommentsView: View {
         VStack(spacing: 0) {
             // Post image — top half
             ZStack(alignment: .topTrailing) {
-                Group {
-                    if let url = URL(string: recommendation.restaurant.imageURL), !recommendation.restaurant.imageURL.isEmpty {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image.resizable().scaledToFill()
-                            case .failure:
-                                Image(systemName: "photo")
-                                    .font(.largeTitle)
-                                    .foregroundStyle(.gray)
-                            case .empty:
-                                ProgressView()
-                            @unknown default:
-                                EmptyView()
-                            }
-                        }
-                    } else {
-                        Image(systemName: "photo")
-                            .font(.largeTitle)
-                            .foregroundStyle(.gray)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 280)
-                .background(Color.gray.opacity(0.2))
-                .clipped()
+                SafeAsyncImage(urlString: recommendation.restaurant.imageURL)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 280)
+                    .background(Color.gray.opacity(0.2))
+                    .clipped()
 
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")

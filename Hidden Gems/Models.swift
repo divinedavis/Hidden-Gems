@@ -265,6 +265,37 @@ class RecommendationsManager {
     func addRecommendation(_ recommendation: Recommendation) {
         recommendations.insert(recommendation, at: 0)
     }
+
+    /// Inserts a new post into Supabase on behalf of the authenticated user.
+    /// The server enforces `auth.uid() = user_id` via RLS, so the `user_id`
+    /// we pass must match the current session. Optimistically prepends the
+    /// post to the local feed and rolls back on failure.
+    func createPost(restaurant: Restaurant, note: String, user: User) async throws {
+        struct NewPost: Encodable {
+            let user_id: String
+            let restaurant_id: String
+            let note: String
+        }
+        let payload = NewPost(
+            user_id: user.id.uuidString,
+            restaurant_id: restaurant.id.uuidString,
+            note: note
+        )
+        var optimistic = Recommendation(
+            restaurant: restaurant,
+            user: user,
+            note: note,
+            date: Date(),
+            isSaved: false
+        )
+        recommendations.insert(optimistic, at: 0)
+        do {
+            try await supabase.from("posts").insert(payload).execute()
+        } catch {
+            recommendations.removeAll { $0.id == optimistic.id }
+            throw error
+        }
+    }
 }
 
 // Observable class to manage saved restaurants across the app
@@ -311,13 +342,47 @@ class LikesManager {
         likedRecommendations.contains(recommendation.id)
     }
     
-    func toggleLike(_ recommendation: Recommendation) {
-        if likedRecommendations.contains(recommendation.id) {
+    /// Toggles the like state locally for immediate UI feedback, then
+    /// persists the change to Supabase on behalf of the authenticated user.
+    /// Reverts the optimistic update if the server call fails.
+    /// `userId` must be the session user — RLS enforces `auth.uid() = user_id`.
+    func toggleLike(_ recommendation: Recommendation, by userId: UUID) {
+        let wasLiked = likedRecommendations.contains(recommendation.id)
+        if wasLiked {
             likedRecommendations.remove(recommendation.id)
             likeCounts[recommendation.id, default: 0] -= 1
         } else {
             likedRecommendations.insert(recommendation.id)
             likeCounts[recommendation.id, default: 0] += 1
+        }
+        let postId = recommendation.id
+        Task { @MainActor in
+            do {
+                if wasLiked {
+                    try await supabase.from("likes")
+                        .delete()
+                        .eq("user_id", value: userId.uuidString)
+                        .eq("post_id", value: postId.uuidString)
+                        .execute()
+                } else {
+                    struct LikeRow: Encodable {
+                        let user_id: String
+                        let post_id: String
+                    }
+                    try await supabase.from("likes")
+                        .insert(LikeRow(user_id: userId.uuidString, post_id: postId.uuidString))
+                        .execute()
+                }
+            } catch {
+                print("Like toggle error: \(error)")
+                if wasLiked {
+                    self.likedRecommendations.insert(postId)
+                    self.likeCounts[postId, default: 0] += 1
+                } else {
+                    self.likedRecommendations.remove(postId)
+                    self.likeCounts[postId, default: 0] -= 1
+                }
+            }
         }
     }
     
@@ -386,9 +451,38 @@ class CommentsManager {
         return Array(sorted.prefix(limit))
     }
     
+    /// Appends a comment locally for immediate UI feedback, then persists
+    /// it to Supabase. The `user` must be the authenticated session user —
+    /// RLS enforces `auth.uid() = user_id`. Reverts on failure.
     func addComment(_ text: String, to recommendation: Recommendation, by user: User) {
         let comment = Comment(user: user, text: text, date: Date(), likeCount: 0)
         comments[recommendation.id, default: []].append(comment)
+        serverCommentCounts[recommendation.id, default: 0] += 1
+        let postId = recommendation.id
+        let commentId = comment.id
+        Task { @MainActor in
+            do {
+                struct NewComment: Encodable {
+                    let post_id: String
+                    let user_id: String
+                    let text: String
+                }
+                try await supabase.from("comments")
+                    .insert(NewComment(
+                        post_id: postId.uuidString,
+                        user_id: user.id.uuidString,
+                        text: text
+                    ))
+                    .execute()
+            } catch {
+                print("Comment insert error: \(error)")
+                if var list = self.comments[postId] {
+                    list.removeAll { $0.id == commentId }
+                    self.comments[postId] = list
+                }
+                self.serverCommentCounts[postId, default: 1] -= 1
+            }
+        }
     }
     
     func commentCount(for recommendation: Recommendation) -> Int {

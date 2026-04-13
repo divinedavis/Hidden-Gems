@@ -7,15 +7,19 @@
 
 import SwiftUI
 import PhotosUI
+import Supabase
 
 struct CreatePostView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(RecommendationsManager.self) private var recommendationsManager
+    @Environment(AuthManager.self) private var authManager
     @State private var selectedRestaurant: Restaurant?
     @State private var caption = ""
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var selectedImages: [UIImage] = []
     @State private var showingLocationPicker = false
+    @State private var isPosting = false
+    @State private var postErrorMessage: String?
     
     private let maxPhotos = 5
     private let maxCaptionLength = 124
@@ -24,6 +28,13 @@ struct CreatePostView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    if let postErrorMessage {
+                        Text(postErrorMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                    }
                     // Location Selection
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Restaurant")
@@ -159,11 +170,9 @@ struct CreatePostView: View {
                 }
                 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Post") {
-                        createPost()
-                    }
-                    .disabled(!canPost)
-                    .fontWeight(.semibold)
+                    Button("Post") { createPost() }
+                        .disabled(!canPost || isPosting)
+                        .fontWeight(.semibold)
                 }
             }
             .sheet(isPresented: $showingLocationPicker) {
@@ -183,15 +192,22 @@ struct CreatePostView: View {
     
     private func createPost() {
         guard let restaurant = selectedRestaurant else { return }
-        let newPost = Recommendation(
-            restaurant: restaurant,
-            user: User.sarah,
-            note: caption,
-            date: Date(),
-            isSaved: false
-        )
-        recommendationsManager.addRecommendation(newPost)
-        dismiss()
+        isPosting = true
+        postErrorMessage = nil
+        Task {
+            do {
+                try await recommendationsManager.createPost(
+                    restaurant: restaurant,
+                    note: caption,
+                    user: authManager.currentUser
+                )
+                isPosting = false
+                dismiss()
+            } catch {
+                isPosting = false
+                postErrorMessage = "Could not post. \(error.localizedDescription)"
+            }
+        }
     }
     
     private func loadImages() async {
@@ -210,39 +226,46 @@ struct LocationPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var selectedRestaurant: Restaurant?
     @State private var searchText = ""
-    
+    @State private var restaurants: [Restaurant] = []
+    @State private var isLoading = true
+
     private var filteredRestaurants: [Restaurant] {
-        if searchText.isEmpty {
-            return Restaurant.samples
-        }
-        return Restaurant.samples.filter { restaurant in
+        if searchText.isEmpty { return restaurants }
+        return restaurants.filter { restaurant in
             restaurant.name.localizedCaseInsensitiveContains(searchText) ||
             restaurant.location.localizedCaseInsensitiveContains(searchText)
         }
     }
-    
+
     var body: some View {
         NavigationStack {
-            List(filteredRestaurants) { restaurant in
-                Button {
-                    selectedRestaurant = restaurant
-                    dismiss()
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(restaurant.name)
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text(restaurant.location)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        if selectedRestaurant?.id == restaurant.id {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.blue)
+            Group {
+                if isLoading {
+                    ProgressView("Loading restaurants…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(filteredRestaurants) { restaurant in
+                        Button {
+                            selectedRestaurant = restaurant
+                            dismiss()
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(restaurant.name)
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                    Text(restaurant.location)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if selectedRestaurant?.id == restaurant.id {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.blue)
+                                }
+                            }
                         }
                     }
                 }
@@ -252,15 +275,58 @@ struct LocationPickerView: View {
             .searchable(text: $searchText, prompt: "Search restaurants")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
+                    Button("Cancel") { dismiss() }
                 }
             }
+            .task { await loadRestaurants() }
         }
+    }
+
+    private func loadRestaurants() async {
+        struct RestaurantRow: Decodable {
+            let id: UUID
+            let name: String
+            let cuisine: String?
+            let location: String?
+            let rating: Double?
+            let priceLevel: Int?
+            let imageUrl: String?
+            let description: String?
+            enum CodingKeys: String, CodingKey {
+                case id, name, cuisine, location, rating, description
+                case priceLevel = "price_level"
+                case imageUrl = "image_url"
+            }
+        }
+        do {
+            let rows: [RestaurantRow] = try await supabase
+                .from("restaurants")
+                .select("id, name, cuisine, location, rating, price_level, image_url, description")
+                .order("name")
+                .execute()
+                .value
+            restaurants = rows.map { row in
+                var r = Restaurant(
+                    name: row.name,
+                    cuisine: row.cuisine ?? "",
+                    location: row.location ?? "",
+                    imageURL: row.imageUrl ?? "",
+                    rating: row.rating ?? 0,
+                    priceLevel: row.priceLevel ?? 1,
+                    description: row.description ?? ""
+                )
+                r.id = row.id
+                return r
+            }
+        } catch {
+            print("Restaurants fetch error: \(error)")
+        }
+        isLoading = false
     }
 }
 
 #Preview {
     CreatePostView()
+        .environment(AuthManager())
+        .environment(RecommendationsManager())
 }

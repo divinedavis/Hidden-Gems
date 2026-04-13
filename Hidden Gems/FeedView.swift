@@ -84,6 +84,7 @@ struct RecommendationCard: View {
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
     @Environment(CommentsManager.self) private var commentsManager
+    @Environment(AuthManager.self) private var authManager
     @State private var showingComments = false
     
     var body: some View {
@@ -119,32 +120,11 @@ struct RecommendationCard: View {
             .padding()
             
             // Restaurant image
-            Group {
-                if let url = URL(string: recommendation.restaurant.imageURL), !recommendation.restaurant.imageURL.isEmpty {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        case .failure:
-                            Image(systemName: "photo")
-                                .font(.largeTitle)
-                                .foregroundStyle(.gray)
-                        case .empty:
-                            ProgressView()
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
-                } else {
-                    Image(systemName: "photo")
-                        .font(.largeTitle)
-                        .foregroundStyle(.gray)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .aspectRatio(4/3, contentMode: .fit)
-            .background(Color.gray.opacity(0.2))
-            .clipped()
+            SafeAsyncImage(urlString: recommendation.restaurant.imageURL)
+                .frame(maxWidth: .infinity)
+                .aspectRatio(4/3, contentMode: .fit)
+                .background(Color.gray.opacity(0.2))
+                .clipped()
 
             // Restaurant info
             VStack(alignment: .leading, spacing: 8) {
@@ -173,7 +153,7 @@ struct RecommendationCard: View {
                 HStack(spacing: 24) {
                     Button {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                            likesManager.toggleLike(recommendation)
+                            likesManager.toggleLike(recommendation, by: authManager.currentUser.id)
                         }
                     } label: {
                         HStack(spacing: 4) {
@@ -237,6 +217,7 @@ struct RecommendationCard: View {
         .sheet(isPresented: $showingComments) {
             CommentsView(recommendation: recommendation)
                 .environment(commentsManager)
+                .environment(authManager)
         }
     }
 }

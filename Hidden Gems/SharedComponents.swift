@@ -7,6 +7,50 @@
 
 import SwiftUI
 
+/// Returns a URL only if the string parses and uses the https scheme.
+/// Used to guard AsyncImage against missing, malformed, or non-https URLs
+/// (which could be used for SSRF if we ever proxied images server-side).
+func safeImageURL(from string: String) -> URL? {
+    guard !string.isEmpty,
+          let url = URL(string: string),
+          url.scheme?.lowercased() == "https" else { return nil }
+    return url
+}
+
+/// AsyncImage that validates the URL is https, shows a ProgressView while
+/// loading, and falls through to a photo placeholder on failure or when
+/// the URL is missing/unsafe.
+struct SafeAsyncImage: View {
+    let urlString: String
+
+    var body: some View {
+        Group {
+            if let url = safeImageURL(from: urlString) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        placeholder
+                    case .empty:
+                        ProgressView()
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            } else {
+                placeholder
+            }
+        }
+    }
+
+    private var placeholder: some View {
+        Image(systemName: "photo")
+            .font(.largeTitle)
+            .foregroundStyle(.gray)
+    }
+}
+
 /// Cuisine, price level, and location rows for a restaurant.
 struct RestaurantMetaInfo: View {
     let restaurant: Restaurant
