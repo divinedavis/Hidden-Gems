@@ -119,20 +119,26 @@ struct RecommendationCard: View {
             .padding()
             
             // Restaurant image
-            AsyncImage(url: URL(string: recommendation.restaurant.imageURL)) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
+            Group {
+                if let url = URL(string: recommendation.restaurant.imageURL), !recommendation.restaurant.imageURL.isEmpty {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        case .failure:
+                            Image(systemName: "photo")
+                                .font(.largeTitle)
+                                .foregroundStyle(.gray)
+                        case .empty:
+                            ProgressView()
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                } else {
                     Image(systemName: "photo")
                         .font(.largeTitle)
                         .foregroundStyle(.gray)
-                case .empty:
-                    ProgressView()
-                @unknown default:
-                    EmptyView()
                 }
             }
             .frame(maxWidth: .infinity)
