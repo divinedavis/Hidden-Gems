@@ -72,7 +72,10 @@ struct FeedView: View {
     }
     
     private func refreshFeed() async {
-        await recommendationsManager.fetchFeed()
+        await recommendationsManager.fetchFeed(
+            likesManager: likesManager,
+            commentsManager: commentsManager
+        )
     }
 }
 
@@ -116,14 +119,26 @@ struct RecommendationCard: View {
             .padding()
             
             // Restaurant image
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .aspectRatio(4/3, contentMode: .fit)
-                .overlay {
+            AsyncImage(url: URL(string: recommendation.restaurant.imageURL)) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
                     Image(systemName: "photo")
                         .font(.largeTitle)
                         .foregroundStyle(.gray)
+                case .empty:
+                    ProgressView()
+                @unknown default:
+                    EmptyView()
                 }
+            }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(4/3, contentMode: .fit)
+            .background(Color.gray.opacity(0.2))
+            .clipped()
 
             // Restaurant info
             VStack(alignment: .leading, spacing: 8) {

@@ -31,15 +31,26 @@ struct CommentsView: View {
         VStack(spacing: 0) {
             // Post image — top half
             ZStack(alignment: .topTrailing) {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 280)
-                    .overlay {
+                AsyncImage(url: URL(string: recommendation.restaurant.imageURL)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure:
                         Image(systemName: "photo")
                             .font(.largeTitle)
                             .foregroundStyle(.gray)
+                    case .empty:
+                        ProgressView()
+                    @unknown default:
+                        EmptyView()
                     }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 280)
+                .background(Color.gray.opacity(0.2))
+                .clipped()
 
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")

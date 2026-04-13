@@ -58,6 +58,35 @@ struct User: Identifiable, Equatable, Hashable {
     }
 }
 
+// Codable struct matching a row from the Supabase 'comments' table
+// joined with the user who wrote the comment.
+struct SupabaseComment: Codable {
+    let id: UUID
+    let postId: UUID
+    let userId: UUID
+    let text: String
+    let createdAt: Date
+    let users: Author
+
+    struct Author: Codable {
+        let name: String
+        let username: String
+        let profileImageUrl: String?
+
+        enum CodingKeys: String, CodingKey {
+            case name, username
+            case profileImageUrl = "profile_image_url"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, text, users
+        case postId = "post_id"
+        case userId = "user_id"
+        case createdAt = "created_at"
+    }
+}
+
 // Codable struct matching the Supabase 'feed' view
 struct SupabaseFeedPost: Codable {
     let id: UUID
@@ -212,21 +241,9 @@ class RecommendationsManager {
     var recommendations: [Recommendation] = []
     var isLoading = false
 
-    func fetchFeed() async {
+    func fetchFeed(likesManager: LikesManager? = nil, commentsManager: CommentsManager? = nil) async {
         isLoading = true
         do {
-            let decoder = JSONDecoder()
-            let withFractional = ISO8601DateFormatter()
-            withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let noFractional = ISO8601DateFormatter()
-            noFractional.formatOptions = [.withInternetDateTime]
-            decoder.dateDecodingStrategy = .custom { d in
-                let c = try d.singleValueContainer()
-                let s = try c.decode(String.self)
-                if let date = withFractional.date(from: s) { return date }
-                if let date = noFractional.date(from: s) { return date }
-                throw DecodingError.dataCorruptedError(in: c, debugDescription: "Invalid ISO8601 date: \(s)")
-            }
             let posts: [SupabaseFeedPost] = try await supabase
                 .from("feed")
                 .select()
@@ -234,6 +251,11 @@ class RecommendationsManager {
                 .execute()
                 .value
             recommendations = posts.map { $0.toRecommendation() }
+            likesManager?.hydrate(from: posts)
+            commentsManager?.hydrateCounts(from: posts)
+            if let commentsManager {
+                await commentsManager.fetchAllComments()
+            }
         } catch {
             print("Feed fetch error: \(error)")
         }
@@ -278,7 +300,13 @@ class SavedRestaurantsManager {
 class LikesManager {
     var likedRecommendations: Set<UUID> = []
     var likeCounts: [UUID: Int] = [:]
-    
+
+    func hydrate(from posts: [SupabaseFeedPost]) {
+        for post in posts {
+            likeCounts[post.id] = post.likeCount
+        }
+    }
+
     func isLiked(_ recommendation: Recommendation) -> Bool {
         likedRecommendations.contains(recommendation.id)
     }
@@ -302,8 +330,46 @@ class LikesManager {
 @Observable
 class CommentsManager {
     var comments: [UUID: [Comment]] = [:]
+    var serverCommentCounts: [UUID: Int] = [:]
     var commentLikes: [UUID: Set<UUID>] = [:] // commentId: Set of user IDs who liked it
-    
+
+    func hydrateCounts(from posts: [SupabaseFeedPost]) {
+        for post in posts {
+            serverCommentCounts[post.id] = post.commentCount
+        }
+    }
+
+    func fetchAllComments() async {
+        do {
+            let rows: [SupabaseComment] = try await supabase
+                .from("comments")
+                .select("id, post_id, user_id, text, created_at, users(name, username, profile_image_url)")
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+            var grouped: [UUID: [Comment]] = [:]
+            for row in rows {
+                var user = User(
+                    name: row.users.name,
+                    username: row.users.username,
+                    profileImageURL: row.users.profileImageUrl ?? "",
+                    followersCount: 0,
+                    followingCount: 0
+                )
+                user.id = row.userId
+                var comment = Comment(user: user, text: row.text, date: row.createdAt, likeCount: 0)
+                comment.id = row.id
+                grouped[row.postId, default: []].append(comment)
+            }
+            comments = grouped
+            for (postId, list) in grouped {
+                serverCommentCounts[postId] = max(serverCommentCounts[postId, default: 0], list.count)
+            }
+        } catch {
+            print("Comments fetch error: \(error)")
+        }
+    }
+
     func getComments(for recommendation: Recommendation) -> [Comment] {
         let allComments = comments[recommendation.id, default: []]
         // Sort by like count (descending), then by date (most recent first)
@@ -326,7 +392,7 @@ class CommentsManager {
     }
     
     func commentCount(for recommendation: Recommendation) -> Int {
-        comments[recommendation.id, default: []].count
+        max(comments[recommendation.id, default: []].count, serverCommentCounts[recommendation.id, default: 0])
     }
     
     func isCommentLiked(_ comment: Comment, by userId: UUID) -> Bool {
