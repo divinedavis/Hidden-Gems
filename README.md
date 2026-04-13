@@ -45,6 +45,15 @@ Hidden Gems/
 2. Open `Hidden Gems.xcodeproj` in Xcode
 3. Select a simulator or device and run
 
+## Development Workflow
+
+**Claude must push to GitHub after every change.**
+
+- Repo: `git@github.com:divinedavis/Hidden-Gems.git` (branch: `main`)
+- After any code edit: `git add -A && git commit -m "<message>" && git push origin main`
+- Do not batch multiple unrelated changes into one commit — commit and push per logical change
+- An auto-sync script also exists at `~/auto-push-hidden-gems.sh` (logs to `~/hidden-gems-autopush.log`), but Claude should still push explicitly after each change rather than relying on it
+
 ## Author
 
 Divine Davis
