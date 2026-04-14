@@ -88,12 +88,13 @@ struct CommentsView: View {
             // Replying-to banner (only while a reply is in progress)
             if let target = replyingTo {
                 HStack(spacing: 8) {
-                    Text("Replying to ")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    + Text(target.user.username)
-                        .font(.caption)
-                        .foregroundStyle(.blue)
+                    HStack(spacing: 0) {
+                        Text("Replying to ")
+                            .foregroundStyle(.secondary)
+                        Text(target.user.username)
+                            .foregroundStyle(.blue)
+                    }
+                    .font(.caption)
 
                     Spacer()
 
@@ -226,7 +227,7 @@ struct CommentsView: View {
                         }
 
                         Button {
-                            withAnimation { expandedReplies.remove(comment.id) }
+                            withAnimation { _ = expandedReplies.remove(comment.id) }
                         } label: {
                             HStack(spacing: 6) {
                                 Rectangle().fill(Color.secondary).frame(width: 24, height: 1)
@@ -239,7 +240,7 @@ struct CommentsView: View {
                     .padding(.leading, 48)
                 } else {
                     Button {
-                        withAnimation { expandedReplies.insert(comment.id) }
+                        withAnimation { _ = expandedReplies.insert(comment.id) }
                     } label: {
                         HStack(spacing: 6) {
                             Rectangle().fill(Color.secondary).frame(width: 24, height: 1)
