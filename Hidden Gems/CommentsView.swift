@@ -13,13 +13,15 @@ struct CommentsView: View {
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
     @State private var newCommentText = ""
+    @State private var replyingTo: Comment? = nil
+    @State private var expandedReplies: Set<UUID> = []
 
     private var currentUser: User { authManager.currentUser }
     @FocusState private var commentFieldFocused: Bool
     @State private var keyboardHeight: CGFloat = 0
 
-    private var comments: [Comment] {
-        commentsManager.getComments(for: recommendation)
+    private var topLevelComments: [Comment] {
+        commentsManager.getTopLevelComments(for: recommendation)
     }
 
     var body: some View {
@@ -73,23 +75,40 @@ struct CommentsView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 16) {
-                        ForEach(comments) { comment in
-                            CommentRow(
-                                comment: comment,
-                                currentUserId: currentUser.id,
-                                onLike: {
-                                    commentsManager.toggleCommentLike(comment, by: currentUser.id)
-                                },
-                                isLiked: commentsManager.isCommentLiked(comment, by: currentUser.id)
-                            )
+                        ForEach(topLevelComments) { comment in
+                            commentThread(for: comment)
                         }
-
                     }
                     .padding()
                 }
             }
 
             Divider()
+
+            // Replying-to banner (only while a reply is in progress)
+            if let target = replyingTo {
+                HStack(spacing: 8) {
+                    Text("Replying to ")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    + Text(target.user.username)
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+
+                    Spacer()
+
+                    Button {
+                        replyingTo = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+                .background(Color(.secondarySystemBackground))
+            }
 
             // Comment input
             HStack(spacing: 12) {
@@ -102,7 +121,11 @@ struct CommentsView: View {
                             .foregroundStyle(.gray)
                     }
 
-                TextField("Add a comment...", text: $newCommentText, axis: .vertical)
+                TextField(
+                    replyingTo == nil ? "Add a comment..." : "Add a reply...",
+                    text: $newCommentText,
+                    axis: .vertical
+                )
                     .lineLimit(1...4)
                     .textFieldStyle(.plain)
                     .focused($commentFieldFocused)
@@ -138,10 +161,97 @@ struct CommentsView: View {
     }
 
     private func postComment() {
-        guard !newCommentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        commentsManager.addComment(newCommentText, to: recommendation, by: currentUser)
+        let trimmed = newCommentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        // Replies to a reply collapse to a reply to the top-level parent so
+        // threading stays one level deep. If replyingTo is itself a reply,
+        // we walk up to its parent.
+        let resolvedParentId: UUID?
+        if let target = replyingTo {
+            resolvedParentId = target.parentCommentId ?? target.id
+            // Auto-expand the thread the reply belongs to so the user sees it.
+            if let pid = resolvedParentId {
+                expandedReplies.insert(pid)
+            }
+        } else {
+            resolvedParentId = nil
+        }
+        commentsManager.addComment(
+            newCommentText,
+            to: recommendation,
+            by: currentUser,
+            parentCommentId: resolvedParentId
+        )
         newCommentText = ""
+        replyingTo = nil
         commentFieldFocused = false
+    }
+
+    /// Renders one top-level comment and its reply thread. Replies stay
+    /// collapsed behind a "View N replies" toggle until tapped.
+    @ViewBuilder
+    private func commentThread(for comment: Comment) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CommentRow(
+                comment: comment,
+                currentUserId: currentUser.id,
+                onLike: {
+                    commentsManager.toggleCommentLike(comment, by: currentUser.id)
+                },
+                isLiked: commentsManager.isCommentLiked(comment, by: currentUser.id),
+                onReply: {
+                    replyingTo = comment
+                    commentFieldFocused = true
+                }
+            )
+
+            let replies = commentsManager.getReplies(to: comment.id, in: recommendation)
+            if !replies.isEmpty {
+                if expandedReplies.contains(comment.id) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(replies) { reply in
+                            CommentRow(
+                                comment: reply,
+                                currentUserId: currentUser.id,
+                                onLike: {
+                                    commentsManager.toggleCommentLike(reply, by: currentUser.id)
+                                },
+                                isLiked: commentsManager.isCommentLiked(reply, by: currentUser.id),
+                                onReply: {
+                                    // Reply to a reply targets the same parent thread.
+                                    replyingTo = reply
+                                    commentFieldFocused = true
+                                }
+                            )
+                        }
+
+                        Button {
+                            withAnimation { expandedReplies.remove(comment.id) }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Rectangle().fill(Color.secondary).frame(width: 24, height: 1)
+                                Text("Hide replies")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.leading, 48)
+                } else {
+                    Button {
+                        withAnimation { expandedReplies.insert(comment.id) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Rectangle().fill(Color.secondary).frame(width: 24, height: 1)
+                            Text("View \(replies.count) \(replies.count == 1 ? "reply" : "replies")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.leading, 48)
+                }
+            }
+        }
     }
 }
 
@@ -150,6 +260,7 @@ struct CommentRow: View {
     let currentUserId: UUID
     let onLike: () -> Void
     let isLiked: Bool
+    let onReply: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -181,23 +292,29 @@ struct CommentRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // Like button
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                        onLike()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isLiked ? "heart.fill" : "heart")
-                            .font(.caption)
-                            .foregroundStyle(isLiked ? .red : .secondary)
-
-                        if comment.likeCount > 0 {
-                            Text("\(comment.likeCount)")
+                // Action row: Like + Reply
+                HStack(spacing: 16) {
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            onLike()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: isLiked ? "heart.fill" : "heart")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(isLiked ? .red : .secondary)
+
+                            if comment.likeCount > 0 {
+                                Text("\(comment.likeCount)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+
+                    Button("Reply", action: onReply)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 

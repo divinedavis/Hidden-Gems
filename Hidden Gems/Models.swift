@@ -35,6 +35,7 @@ struct Comment: Identifiable, Equatable {
     let text: String
     let date: Date
     var likeCount: Int = 0
+    var parentCommentId: UUID? = nil
 
     static func == (lhs: Comment, rhs: Comment) -> Bool {
         lhs.id == rhs.id
@@ -66,6 +67,7 @@ struct SupabaseComment: Codable {
     let userId: UUID
     let text: String
     let createdAt: Date
+    let parentCommentId: UUID?
     let users: Author
 
     struct Author: Codable {
@@ -84,6 +86,7 @@ struct SupabaseComment: Codable {
         case postId = "post_id"
         case userId = "user_id"
         case createdAt = "created_at"
+        case parentCommentId = "parent_comment_id"
     }
 }
 
@@ -408,7 +411,7 @@ class CommentsManager {
         do {
             let rows: [SupabaseComment] = try await supabase
                 .from("comments")
-                .select("id, post_id, user_id, text, created_at, users(name, username, profile_image_url)")
+                .select("id, post_id, user_id, text, created_at, parent_comment_id, users(name, username, profile_image_url)")
                 .order("created_at", ascending: false)
                 .execute()
                 .value
@@ -424,6 +427,7 @@ class CommentsManager {
                 user.id = row.userId
                 var comment = Comment(user: user, text: row.text, date: row.createdAt, likeCount: 0)
                 comment.id = row.id
+                comment.parentCommentId = row.parentCommentId
                 grouped[row.postId, default: []].append(comment)
             }
             comments = grouped
@@ -433,6 +437,32 @@ class CommentsManager {
         } catch {
             print("Comments fetch error: \(error)")
         }
+    }
+
+    /// Returns only top-level comments (no parent) for a post, sorted by
+    /// like count then recency. Replies are fetched separately via
+    /// `getReplies(to:in:)`.
+    func getTopLevelComments(for recommendation: Recommendation) -> [Comment] {
+        comments[recommendation.id, default: []]
+            .filter { $0.parentCommentId == nil }
+            .sorted { a, b in
+                if a.likeCount != b.likeCount { return a.likeCount > b.likeCount }
+                return a.date > b.date
+            }
+    }
+
+    /// Returns replies to a specific parent comment on a specific post,
+    /// in chronological order (oldest first).
+    func getReplies(to parentId: UUID, in recommendation: Recommendation) -> [Comment] {
+        comments[recommendation.id, default: []]
+            .filter { $0.parentCommentId == parentId }
+            .sorted { $0.date < $1.date }
+    }
+
+    func replyCount(to parentId: UUID, in recommendation: Recommendation) -> Int {
+        comments[recommendation.id, default: []]
+            .filter { $0.parentCommentId == parentId }
+            .count
     }
 
     func getComments(for recommendation: Recommendation) -> [Comment] {
@@ -453,9 +483,16 @@ class CommentsManager {
     
     /// Appends a comment locally for immediate UI feedback, then persists
     /// it to Supabase. The `user` must be the authenticated session user —
-    /// RLS enforces `auth.uid() = user_id`. Reverts on failure.
-    func addComment(_ text: String, to recommendation: Recommendation, by user: User) {
-        let comment = Comment(user: user, text: text, date: Date(), likeCount: 0)
+    /// RLS enforces `auth.uid() = user_id`. Pass `parentCommentId` to make
+    /// the new row a reply. Reverts on failure.
+    func addComment(
+        _ text: String,
+        to recommendation: Recommendation,
+        by user: User,
+        parentCommentId: UUID? = nil
+    ) {
+        var comment = Comment(user: user, text: text, date: Date(), likeCount: 0)
+        comment.parentCommentId = parentCommentId
         comments[recommendation.id, default: []].append(comment)
         serverCommentCounts[recommendation.id, default: 0] += 1
         let postId = recommendation.id
@@ -466,12 +503,14 @@ class CommentsManager {
                     let post_id: String
                     let user_id: String
                     let text: String
+                    let parent_comment_id: String?
                 }
                 try await supabase.from("comments")
                     .insert(NewComment(
                         post_id: postId.uuidString,
                         user_id: user.id.uuidString,
-                        text: text
+                        text: text,
+                        parent_comment_id: parentCommentId?.uuidString
                     ))
                     .execute()
             } catch {
