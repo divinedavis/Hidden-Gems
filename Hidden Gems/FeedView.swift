@@ -69,7 +69,6 @@ struct FeedView: View {
             .task {
                 await refreshFeed()
             }
-            .toolbar(isTabBarVisible ? .visible : .hidden, for: .tabBar)
             .navigationTitle("Hidden Gems")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -108,6 +107,7 @@ struct FeedView: View {
             }
             .background(Color(.systemGroupedBackground))
         }
+        .toolbar(isTabBarVisible ? .visible : .hidden, for: .tabBar)
     }
     
     private func refreshFeed() async {

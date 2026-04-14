@@ -13,20 +13,13 @@ struct CommentsView: View {
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
     @State private var newCommentText = ""
-    @State private var showAllComments = false
 
     private var currentUser: User { authManager.currentUser }
     @FocusState private var commentFieldFocused: Bool
     @State private var keyboardHeight: CGFloat = 0
 
     private var comments: [Comment] {
-        showAllComments
-            ? commentsManager.getComments(for: recommendation)
-            : commentsManager.getTopComments(for: recommendation, limit: 3)
-    }
-
-    private var hasMoreComments: Bool {
-        commentsManager.commentCount(for: recommendation) > 3
+        commentsManager.getComments(for: recommendation)
     }
 
     var body: some View {
@@ -91,16 +84,6 @@ struct CommentsView: View {
                             )
                         }
 
-                        if hasMoreComments && !showAllComments {
-                            Button {
-                                withAnimation { showAllComments = true }
-                            } label: {
-                                Text("View all \(commentsManager.commentCount(for: recommendation)) comments")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.blue)
-                                    .padding(.vertical, 8)
-                            }
-                        }
                     }
                     .padding()
                 }
