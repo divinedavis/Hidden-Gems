@@ -7,13 +7,26 @@
 
 import SwiftUI
 
+/// Emits the current vertical scroll offset of the feed's content in
+/// the "feedScroll" coordinate space so the tab bar can hide on
+/// downward scrolls and reappear on upward scrolls.
+private struct FeedScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct FeedView: View {
     @Environment(RecommendationsManager.self) private var recommendationsManager
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
     @Environment(CommentsManager.self) private var commentsManager
     @Binding var showingCreatePost: Bool
-    
+
+    @State private var isTabBarVisible = true
+    @State private var lastScrollY: CGFloat = 0
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -24,6 +37,31 @@ struct FeedView: View {
                     }
                 }
                 .padding(.horizontal)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: FeedScrollOffsetKey.self,
+                            value: proxy.frame(in: .named("feedScroll")).minY
+                        )
+                    }
+                )
+            }
+            .coordinateSpace(name: "feedScroll")
+            .onPreferenceChange(FeedScrollOffsetKey.self) { newY in
+                let delta = newY - lastScrollY
+                // Threshold prevents jitter from tiny movements.
+                // Delta < 0 means content scrolled up (user scrolling down) → hide.
+                // Delta > 0 means content scrolled down (user scrolling up) → show.
+                if delta < -6, isTabBarVisible, newY < -20 {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isTabBarVisible = false
+                    }
+                } else if delta > 6, !isTabBarVisible {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isTabBarVisible = true
+                    }
+                }
+                lastScrollY = newY
             }
             .refreshable {
                 await refreshFeed()
@@ -31,6 +69,7 @@ struct FeedView: View {
             .task {
                 await refreshFeed()
             }
+            .toolbar(isTabBarVisible ? .visible : .hidden, for: .tabBar)
             .navigationTitle("Hidden Gems")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
