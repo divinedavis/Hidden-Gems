@@ -31,22 +31,34 @@ struct CommentsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Post image — top half
-            ZStack(alignment: .topTrailing) {
+            // Compact TikTok-style header: small thumbnail + restaurant info +
+            // close button. Keeps the image constrained so comments get most
+            // of the screen.
+            HStack(spacing: 12) {
                 SafeAsyncImage(urlString: recommendation.restaurant.imageURL)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 280)
-                    .background(Color.gray.opacity(0.2))
-                    .clipped()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recommendation.restaurant.name)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(recommendation.restaurant.cuisine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
 
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title2)
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.4), radius: 3)
+                        .foregroundStyle(.gray)
                 }
-                .padding()
             }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
 
             Divider()
 

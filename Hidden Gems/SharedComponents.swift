@@ -17,37 +17,55 @@ func safeImageURL(from string: String) -> URL? {
     return url
 }
 
-/// AsyncImage that validates the URL is https, shows a ProgressView while
-/// loading, and falls through to a photo placeholder on failure or when
-/// the URL is missing/unsafe.
+/// AsyncImage that validates the URL is https, fills its container with
+/// `scaledToFill` + hard clipping (so it can never push its parent wider),
+/// shows a ProgressView while loading, and falls through to a photo
+/// placeholder on failure or when the URL is missing/unsafe.
+///
+/// Callers must give this view an explicit frame (e.g. `.frame(height:)`
+/// plus `.frame(maxWidth: .infinity)` or a fixed square). The GeometryReader
+/// inside guarantees the image will clip to those bounds no matter how
+/// large the underlying photo is.
 struct SafeAsyncImage: View {
     let urlString: String
 
     var body: some View {
-        Group {
-            if let url = safeImageURL(from: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .failure:
-                        placeholder
-                    case .empty:
-                        ProgressView()
-                    @unknown default:
-                        EmptyView()
+        GeometryReader { geo in
+            Group {
+                if let url = safeImageURL(from: urlString) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
+                        case .failure:
+                            placeholder
+                                .frame(width: geo.size.width, height: geo.size.height)
+                        case .empty:
+                            ProgressView()
+                                .frame(width: geo.size.width, height: geo.size.height)
+                        @unknown default:
+                            EmptyView()
+                        }
                     }
+                } else {
+                    placeholder
+                        .frame(width: geo.size.width, height: geo.size.height)
                 }
-            } else {
-                placeholder
             }
         }
     }
 
     private var placeholder: some View {
-        Image(systemName: "photo")
-            .font(.largeTitle)
-            .foregroundStyle(.gray)
+        ZStack {
+            Color.gray.opacity(0.15)
+            Image(systemName: "photo")
+                .font(.largeTitle)
+                .foregroundStyle(.gray)
+        }
     }
 }
 
