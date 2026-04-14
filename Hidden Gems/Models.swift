@@ -435,7 +435,7 @@ class CommentsManager {
                 serverCommentCounts[postId] = max(serverCommentCounts[postId, default: 0], list.count)
             }
         } catch {
-            print("Comments fetch error: \(error)")
+            print("Comments fetch error: \(error.localizedDescription) | \(error)")
         }
     }
 

@@ -208,7 +208,11 @@ struct RecommendationCard: View {
                                     .foregroundStyle(.primary)
                             }
                         }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 4)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     
                     Button {
                         showingComments = true
@@ -216,7 +220,8 @@ struct RecommendationCard: View {
                         HStack(spacing: 4) {
                             Image(systemName: "bubble.right")
                                 .font(.title3)
-                            
+                                .foregroundStyle(.primary)
+
                             let count = commentsManager.commentCount(for: recommendation)
                             if count > 0 {
                                 Text("\(count)")
@@ -224,14 +229,22 @@ struct RecommendationCard: View {
                                     .foregroundStyle(.primary)
                             }
                         }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 4)
+                        .contentShape(Rectangle())
                     }
-                    
+                    .buttonStyle(.plain)
+
                     Button {
                         // Share action
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                             .font(.title3)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 4)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     
                     Spacer()
                     
@@ -243,7 +256,11 @@ struct RecommendationCard: View {
                         Image(systemName: savedManager.isSaved(recommendation.restaurant) ? "bookmark.fill" : "bookmark")
                             .font(.title3)
                             .scaleEffect(savedManager.isSaved(recommendation.restaurant) ? 1.15 : 1.0)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 4)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
                 .foregroundStyle(.primary)
                 .padding(.top, 8)

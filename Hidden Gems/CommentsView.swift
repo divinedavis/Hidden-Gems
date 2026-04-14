@@ -25,6 +25,13 @@ struct CommentsView: View {
     }
 
     var body: some View {
+        mainContent
+            .task {
+                await commentsManager.fetchAllComments()
+            }
+    }
+
+    private var mainContent: some View {
         VStack(spacing: 0) {
             // Compact TikTok-style header: small thumbnail + restaurant info +
             // close button. Keeps the image constrained so comments get most
@@ -57,7 +64,13 @@ struct CommentsView: View {
 
             Divider()
 
-            // Comments — fills space between image and input
+            // Comments — fills space between image and input.
+            //
+            // Three states:
+            //   1. Known empty (count == 0)   → "No comments yet" CTA
+            //   2. Count > 0 but list empty   → loading spinner while
+            //      fetchAllComments() completes
+            //   3. Has comments               → scrollable list
             if commentsManager.commentCount(for: recommendation) == 0 {
                 VStack(spacing: 12) {
                     Spacer()
@@ -67,6 +80,16 @@ struct CommentsView: View {
                     Text("No comments yet")
                         .font(.headline)
                     Text("Be the first to comment!")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else if topLevelComments.isEmpty {
+                VStack(spacing: 12) {
+                    Spacer()
+                    ProgressView()
+                    Text("Loading comments…")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Spacer()
