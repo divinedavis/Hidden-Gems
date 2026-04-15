@@ -260,7 +260,7 @@ class RecommendationsManager {
                 await commentsManager.fetchAllComments()
             }
         } catch {
-            print("Feed fetch error: \(error)")
+            debugLog("Feed fetch error", error)
         }
         isLoading = false
     }
@@ -377,7 +377,7 @@ class LikesManager {
                         .execute()
                 }
             } catch {
-                print("Like toggle error: \(error)")
+                debugLog("Like toggle error", error)
                 if wasLiked {
                     self.likedRecommendations.insert(postId)
                     self.likeCounts[postId, default: 0] += 1
@@ -435,7 +435,7 @@ class CommentsManager {
                 serverCommentCounts[postId] = max(serverCommentCounts[postId, default: 0], list.count)
             }
         } catch {
-            print("Comments fetch error: \(error.localizedDescription) | \(error)")
+            debugLog("Comments fetch error", "\(error.localizedDescription) | \(error)")
         }
     }
 
@@ -514,7 +514,7 @@ class CommentsManager {
                     ))
                     .execute()
             } catch {
-                print("Comment insert error: \(error)")
+                debugLog("Comment insert error", error)
                 if var list = self.comments[postId] {
                     list.removeAll { $0.id == commentId }
                     self.comments[postId] = list
@@ -564,7 +564,15 @@ class CommentsManager {
 @Observable
 class FollowManager {
     var followedUsers: Set<UUID> = []
-    var currentUser: User = User.sarah
+    // Placeholder until the view hydrates this from authManager.currentUser.
+    // Kept as an empty User so no sample data leaks into live code paths.
+    var currentUser: User = User(
+        name: "",
+        username: "",
+        profileImageURL: "",
+        followersCount: 0,
+        followingCount: 0
+    )
 
     func isFollowing(_ user: User) -> Bool {
         followedUsers.contains(user.id)

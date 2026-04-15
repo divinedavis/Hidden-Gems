@@ -7,6 +7,21 @@
 
 import SwiftUI
 
+/// Writes to the Xcode console in Debug builds only. Release builds
+/// compile this to a no-op so error details — which can contain
+/// request URLs, user ids, and other metadata — never leak into device
+/// crash logs or iOS's unified logging where a sufficiently motivated
+/// attacker could read them.
+func debugLog(_ label: String, _ value: Any? = nil) {
+    #if DEBUG
+    if let value {
+        print("[HiddenGems] \(label): \(value)")
+    } else {
+        print("[HiddenGems] \(label)")
+    }
+    #endif
+}
+
 /// Returns a URL only if the string parses and uses the https scheme.
 /// Used to guard AsyncImage against missing, malformed, or non-https URLs
 /// (which could be used for SSRF if we ever proxied images server-side).

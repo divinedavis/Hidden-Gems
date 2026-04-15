@@ -319,7 +319,7 @@ struct LocationPickerView: View {
                 return r
             }
         } catch {
-            print("Restaurants fetch error: \(error)")
+            debugLog("LocationPicker restaurants fetch error", error)
         }
         isLoading = false
     }

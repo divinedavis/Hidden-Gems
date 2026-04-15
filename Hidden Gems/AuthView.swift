@@ -29,6 +29,10 @@ class AuthManager {
             let session = try await supabase.auth.signIn(email: email, password: password)
             await loadProfile(authId: session.user.id)
         } catch {
+            // Keep the user-facing message generic so we don't reveal
+            // whether the email exists (account enumeration protection).
+            // The real error is only logged in Debug builds.
+            debugLog("Sign in error", error)
             errorMessage = "Incorrect email or password."
         }
     }
@@ -43,13 +47,33 @@ class AuthManager {
             pendingAuthId = response.user.id
             needsProfileSetup = true
         } catch {
-            let msg = error.localizedDescription.lowercased()
-            if msg.contains("already") || msg.contains("registered") || msg.contains("exists") {
-                errorMessage = "An account with this email already exists."
-            } else {
-                errorMessage = "Sign up failed. Please try again."
-            }
+            debugLog("Sign up error", error)
+            errorMessage = friendlySignUpMessage(for: error)
         }
+    }
+
+    /// Maps a Supabase auth error to a user-friendly message. We look at
+    /// the raw description (Supabase-swift includes the server's error_code
+    /// in there) and map known codes to actionable copy, falling back to
+    /// a generic message so internal details never leak to the UI.
+    private func friendlySignUpMessage(for error: Error) -> String {
+        let raw = error.localizedDescription.lowercased()
+        if raw.contains("already") || raw.contains("registered") || raw.contains("exists") {
+            return "An account with this email already exists."
+        }
+        if raw.contains("email_address_invalid") || raw.contains("invalid email") || raw.contains("email address") && raw.contains("invalid") {
+            return "That email address isn't accepted. Try a different one."
+        }
+        if raw.contains("weak_password") || raw.contains("password") && raw.contains("short") {
+            return "Password is too weak. Use at least 8 characters with a mix of letters and numbers."
+        }
+        if raw.contains("rate limit") || raw.contains("too many requests") {
+            return "Too many attempts. Please wait a moment and try again."
+        }
+        if raw.contains("network") || raw.contains("offline") || raw.contains("connection") {
+            return "No internet connection. Check your connection and try again."
+        }
+        return "Sign up failed. Please try again."
     }
 
     // MARK: Complete Profile Setup
@@ -84,7 +108,7 @@ class AuthManager {
             needsProfileSetup = false
             isSignedIn = true
         } catch {
-            print("Profile setup error: \(error)")
+            debugLog("Profile setup error", error)
             errorMessage = "Could not save profile: \(error.localizedDescription)"
         }
     }
