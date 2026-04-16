@@ -192,18 +192,12 @@ struct SignInView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     // Logo
-                    VStack(spacing: 12) {
-                        Image("Logo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 180, height: 180)
-                        Text("Hidden Gems")
-                            .font(.largeTitle).fontWeight(.bold)
-                        Text("Discover restaurants worth finding")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 60)
-                    .padding(.bottom, 48)
+                    Image("Logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 180, height: 180)
+                        .padding(.top, 60)
+                        .padding(.bottom, 48)
 
                     // Error
                     if let error = authManager.errorMessage {
