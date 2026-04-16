@@ -20,8 +20,6 @@ struct Hidden_GemsApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                Color.black.ignoresSafeArea()
-
                 Group {
                     if authManager.isSignedIn {
                         ContentView()

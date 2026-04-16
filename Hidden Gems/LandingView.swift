@@ -100,30 +100,8 @@ struct LandingView: View {
 
     var body: some View {
         ZStack {
-            // Background
-            Color.black.ignoresSafeArea()
+            Color.white.ignoresSafeArea()
 
-            // Animated rings
-            ZStack {
-                ForEach(0..<6, id: \.self) { i in
-                    AnimatedRing(
-                        index: i,
-                        color1: ringColor1(for: i),
-                        color2: ringColor2(for: i)
-                    )
-                }
-            }
-            .offset(y: -40)
-
-            // Pulsing glows
-            PulsingGlow(color: .blue, size: 300)
-                .offset(x: -80, y: -200)
-            PulsingGlow(color: .purple, size: 250)
-                .offset(x: 100, y: 100)
-            PulsingGlow(color: .indigo, size: 200)
-                .offset(x: -60, y: 200)
-
-            // Content
             VStack(spacing: 0) {
                 Spacer()
 
@@ -131,31 +109,23 @@ struct LandingView: View {
                 Image("Logo")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 220, height: 220)
+                    .frame(width: 440, height: 440)
                     .scaleEffect(gemScale)
                     .opacity(gemOpacity)
                     .rotationEffect(.degrees(gemRotation))
-                    .shadow(color: .blue.opacity(0.5), radius: 20)
                     .padding(.bottom, 20)
 
                 // Title
                 Text("Hidden Gems")
                     .font(.system(size: 46, weight: .bold, design: .default))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.white, .white.opacity(0.85)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .shadow(color: .blue.opacity(0.3), radius: 10)
+                    .foregroundStyle(.black)
                     .opacity(titleOpacity)
                     .offset(y: titleOffset)
 
                 // Subtitle
                 Text("Discover restaurants worth finding")
                     .font(.title3)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.secondary)
                     .opacity(subtitleOpacity)
                     .padding(.top, 10)
 
@@ -168,15 +138,8 @@ struct LandingView: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 18)
-                        .background(
-                            LinearGradient(
-                                colors: [.blue, .purple],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .background(Color.black)
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .shadow(color: .blue.opacity(0.4), radius: 12, y: 4)
                 }
                 .padding(.horizontal, 32)
                 .opacity(buttonOpacity)
@@ -185,11 +148,11 @@ struct LandingView: View {
                 // Sign in link
                 HStack(spacing: 4) {
                     Text("Already have an account?")
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(.secondary)
                     Button("Sign In") {
                         onGetStarted()
                     }
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.black)
                     .fontWeight(.semibold)
                 }
                 .font(.subheadline)
