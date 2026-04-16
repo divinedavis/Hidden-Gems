@@ -195,7 +195,7 @@ struct SignInView: View {
                     Image("Logo")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 180, height: 180)
+                        .frame(width: 360, height: 360)
                         .padding(.top, 60)
                         .padding(.bottom, 48)
 
