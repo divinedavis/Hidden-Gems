@@ -115,19 +115,6 @@ struct LandingView: View {
                     .rotationEffect(.degrees(gemRotation))
                     .padding(.bottom, 20)
 
-                // Title
-                Text("Hidden Gems")
-                    .font(.system(size: 46, weight: .bold, design: .default))
-                    .foregroundStyle(.black)
-                    .opacity(titleOpacity)
-                    .offset(y: titleOffset)
-
-                // Subtitle
-                Text("Discover restaurants worth finding")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .opacity(subtitleOpacity)
-                    .padding(.top, 10)
 
                 Spacer()
 
