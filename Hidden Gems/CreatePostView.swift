@@ -8,6 +8,7 @@
 import SwiftUI
 import PhotosUI
 import Supabase
+import MapKit
 
 struct CreatePostView: View {
     @Environment(\.dismiss) private var dismiss
@@ -341,6 +342,36 @@ struct LocationPickerView: View {
     }
 }
 
+// MARK: - Location Completer
+
+@Observable
+class LocationCompleterManager: NSObject, MKLocalSearchCompleterDelegate {
+    var suggestions: [MKLocalSearchCompletion] = []
+    private let completer = MKLocalSearchCompleter()
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = .address
+    }
+
+    func update(query: String) {
+        if query.count >= 3 {
+            completer.queryFragment = query
+        } else {
+            suggestions = []
+        }
+    }
+
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        suggestions = Array(completer.results.prefix(5))
+    }
+
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        suggestions = []
+    }
+}
+
 // MARK: - Add Restaurant View
 
 struct AddRestaurantView: View {
@@ -348,16 +379,26 @@ struct AddRestaurantView: View {
     var onAdd: (Restaurant) -> Void
 
     @State private var name = ""
-    @State private var cuisine = ""
+    @State private var selectedCuisine = ""
     @State private var location = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var locationCompleter = LocationCompleterManager()
+    @State private var showSuggestions = true
     @FocusState private var focusedField: Field?
 
-    enum Field { case name, cuisine, location }
+    enum Field { case name, location }
+
+    private let cuisines = [
+        "American", "Mexican", "Italian", "Chinese", "Japanese",
+        "Korean", "Thai", "Indian", "Mediterranean", "French",
+        "Vietnamese", "Caribbean", "Soul Food", "Greek", "Spanish",
+        "Middle Eastern", "Ethiopian", "Brazilian", "Peruvian", "Other"
+    ]
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !selectedCuisine.isEmpty &&
         !location.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
@@ -374,17 +415,47 @@ struct AddRestaurantView: View {
                     TextField("Restaurant name", text: $name)
                         .focused($focusedField, equals: .name)
                         .submitLabel(.next)
-                        .onSubmit { focusedField = .cuisine }
-
-                    TextField("Cuisine (e.g. Italian, Mexican)", text: $cuisine)
-                        .focused($focusedField, equals: .cuisine)
-                        .submitLabel(.next)
                         .onSubmit { focusedField = .location }
+
+                    Picker("Cuisine", selection: $selectedCuisine) {
+                        Text("Select a cuisine").tag("")
+                        ForEach(cuisines, id: \.self) { cuisine in
+                            Text(cuisine).tag(cuisine)
+                        }
+                    }
 
                     TextField("Location (e.g. 123 Main St, Brooklyn)", text: $location)
                         .focused($focusedField, equals: .location)
                         .submitLabel(.done)
                         .onSubmit { if canSave { save() } }
+                        .onChange(of: location) { _, newValue in
+                            showSuggestions = true
+                            locationCompleter.update(query: newValue)
+                        }
+                }
+
+                if showSuggestions && !locationCompleter.suggestions.isEmpty {
+                    Section {
+                        ForEach(locationCompleter.suggestions, id: \.self) { suggestion in
+                            Button {
+                                let subtitle = suggestion.subtitle
+                                location = subtitle.isEmpty ? suggestion.title : "\(suggestion.title), \(subtitle)"
+                                showSuggestions = false
+                                locationCompleter.suggestions = []
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(suggestion.title)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.primary)
+                                    if !suggestion.subtitle.isEmpty {
+                                        Text(suggestion.subtitle)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .navigationTitle("Add Restaurant")
@@ -431,7 +502,7 @@ struct AddRestaurantView: View {
                     .from("restaurants")
                     .insert(InsertRow(
                         name: name.trimmingCharacters(in: .whitespaces),
-                        cuisine: cuisine.trimmingCharacters(in: .whitespaces),
+                        cuisine: selectedCuisine,
                         location: location.trimmingCharacters(in: .whitespaces)
                     ))
                     .select("id, name, cuisine, location")
