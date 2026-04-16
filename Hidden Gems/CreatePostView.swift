@@ -228,6 +228,7 @@ struct LocationPickerView: View {
     @State private var searchText = ""
     @State private var restaurants: [Restaurant] = []
     @State private var isLoading = true
+    @State private var showingAddRestaurant = false
 
     private var filteredRestaurants: [Restaurant] {
         if searchText.isEmpty { return restaurants }
@@ -277,6 +278,21 @@ struct LocationPickerView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingAddRestaurant = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddRestaurant) {
+                AddRestaurantView { newRestaurant in
+                    restaurants.append(newRestaurant)
+                    restaurants.sort { $0.name.localizedCompare($1.name) == .orderedAscending }
+                    selectedRestaurant = newRestaurant
+                    dismiss()
+                }
             }
             .task { await loadRestaurants() }
         }
@@ -322,6 +338,124 @@ struct LocationPickerView: View {
             debugLog("LocationPicker restaurants fetch error", error)
         }
         isLoading = false
+    }
+}
+
+// MARK: - Add Restaurant View
+
+struct AddRestaurantView: View {
+    @Environment(\.dismiss) private var dismiss
+    var onAdd: (Restaurant) -> Void
+
+    @State private var name = ""
+    @State private var cuisine = ""
+    @State private var location = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @FocusState private var focusedField: Field?
+
+    enum Field { case name, cuisine, location }
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !location.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+
+                Section {
+                    TextField("Restaurant name", text: $name)
+                        .focused($focusedField, equals: .name)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .cuisine }
+
+                    TextField("Cuisine (e.g. Italian, Mexican)", text: $cuisine)
+                        .focused($focusedField, equals: .cuisine)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .location }
+
+                    TextField("Location (e.g. 123 Main St, Brooklyn)", text: $location)
+                        .focused($focusedField, equals: .location)
+                        .submitLabel(.done)
+                        .onSubmit { if canSave { save() } }
+                }
+            }
+            .navigationTitle("Add Restaurant")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Add") { save() }
+                            .fontWeight(.semibold)
+                            .disabled(!canSave)
+                    }
+                }
+            }
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    focusedField = .name
+                }
+            }
+        }
+    }
+
+    private func save() {
+        isSaving = true
+        errorMessage = nil
+        Task {
+            do {
+                struct InsertRow: Encodable {
+                    let name: String
+                    let cuisine: String
+                    let location: String
+                }
+                struct ReturnedRow: Decodable {
+                    let id: UUID
+                    let name: String
+                    let cuisine: String?
+                    let location: String?
+                }
+                let rows: [ReturnedRow] = try await supabase
+                    .from("restaurants")
+                    .insert(InsertRow(
+                        name: name.trimmingCharacters(in: .whitespaces),
+                        cuisine: cuisine.trimmingCharacters(in: .whitespaces),
+                        location: location.trimmingCharacters(in: .whitespaces)
+                    ))
+                    .select("id, name, cuisine, location")
+                    .execute()
+                    .value
+
+                if let row = rows.first {
+                    var r = Restaurant(
+                        name: row.name,
+                        cuisine: row.cuisine ?? "",
+                        location: row.location ?? "",
+                        imageURL: "",
+                        rating: 0,
+                        priceLevel: 1,
+                        description: ""
+                    )
+                    r.id = row.id
+                    onAdd(r)
+                }
+            } catch {
+                errorMessage = "Could not add restaurant. \(error.localizedDescription)"
+                isSaving = false
+            }
+        }
     }
 }
 
