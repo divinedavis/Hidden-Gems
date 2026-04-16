@@ -127,16 +127,11 @@ struct LandingView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // Gem icon
-                Image(systemName: "gem.fill")
-                    .font(.system(size: 70))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.blue, .purple, .pink],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                // Logo
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 220, height: 220)
                     .scaleEffect(gemScale)
                     .opacity(gemOpacity)
                     .rotationEffect(.degrees(gemRotation))

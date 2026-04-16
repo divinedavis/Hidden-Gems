@@ -193,11 +193,10 @@ struct SignInView: View {
                 VStack(spacing: 0) {
                     // Logo
                     VStack(spacing: 12) {
-                        Image(systemName: "gem.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(
-                                LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
+                        Image("Logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 180, height: 180)
                         Text("Hidden Gems")
                             .font(.largeTitle).fontWeight(.bold)
                         Text("Discover restaurants worth finding")
