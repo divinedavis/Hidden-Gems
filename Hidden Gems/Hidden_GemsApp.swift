@@ -21,7 +21,9 @@ struct Hidden_GemsApp: App {
         WindowGroup {
             ZStack {
                 Group {
-                    if authManager.isSignedIn {
+                    if authManager.isRestoringSession {
+                        SplashView()
+                    } else if authManager.isSignedIn {
                         ContentView()
                             .environment(authManager)
                             .onAppear {
@@ -48,6 +50,21 @@ struct Hidden_GemsApp: App {
                 }
             }
             .environment(locationManager)
+            .task {
+                await authManager.restoreSession()
+            }
+        }
+    }
+}
+
+private struct SplashView: View {
+    var body: some View {
+        ZStack {
+            Color.white.ignoresSafeArea()
+            Image("Logo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 440, height: 440)
         }
     }
 }

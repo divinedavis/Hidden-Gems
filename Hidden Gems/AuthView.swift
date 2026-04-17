@@ -14,6 +14,7 @@ import Supabase
 class AuthManager {
     var isSignedIn = false
     var needsProfileSetup = false
+    var isRestoringSession = true
     var currentUser: User = User(name: "", username: "", profileImageURL: "", followersCount: 0, followingCount: 0)
     var errorMessage: String?
 
@@ -21,6 +22,20 @@ class AuthManager {
     var pendingEmail = ""
     var pendingUsername = ""
     var pendingAuthId: UUID?
+
+    // MARK: Restore Session
+    // Supabase-swift persists the session to the keychain automatically,
+    // so on launch we just ask the client whether a session exists and,
+    // if so, hydrate the profile. Keeps users signed in across app restarts.
+    func restoreSession() async {
+        defer { isRestoringSession = false }
+        do {
+            let session = try await supabase.auth.session
+            await loadProfile(authId: session.user.id)
+        } catch {
+            // No persisted session — user will land on the sign-in flow.
+        }
+    }
 
     // MARK: Sign In
     func signIn(email: String, password: String) async {
