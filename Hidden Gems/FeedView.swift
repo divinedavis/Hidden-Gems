@@ -193,54 +193,52 @@ struct RecommendationCard: View {
                         .padding(.top, 4)
                 }
                 
-                // Action buttons
+                // Action buttons — using onTapGesture directly (Button was
+                // not receiving taps inside the feed's ScrollView+LazyVStack
+                // on iOS 26; bypassing Button makes taps reliable).
                 HStack(spacing: 20) {
-                    Button {
+                    HStack(spacing: 4) {
+                        Image(systemName: likesManager.isLiked(recommendation) ? "heart.fill" : "heart")
+                            .font(.title3)
+                            .foregroundStyle(likesManager.isLiked(recommendation) ? .red : .primary)
+                            .scaleEffect(likesManager.isLiked(recommendation) ? 1.15 : 1.0)
+
+                        let count = likesManager.likeCount(for: recommendation)
+                        if count > 0 {
+                            Text("\(count)")
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         debugLog("Like tapped", recommendation.restaurant.name)
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                             likesManager.toggleLike(recommendation, by: authManager.currentUser.id)
                         }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: likesManager.isLiked(recommendation) ? "heart.fill" : "heart")
-                                .font(.title3)
-                                .foregroundStyle(likesManager.isLiked(recommendation) ? .red : .primary)
-                                .scaleEffect(likesManager.isLiked(recommendation) ? 1.15 : 1.0)
-
-                            let count = likesManager.likeCount(for: recommendation)
-                            if count > 0 {
-                                Text("\(count)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 8)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
 
-                    Button {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bubble.right")
+                            .font(.title3)
+                            .foregroundStyle(.primary)
+
+                        let count = commentsManager.commentCount(for: recommendation)
+                        if count > 0 {
+                            Text("\(count)")
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         debugLog("Comment tapped", recommendation.restaurant.name)
                         showingComments = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bubble.right")
-                                .font(.title3)
-                                .foregroundStyle(.primary)
-
-                            let count = commentsManager.commentCount(for: recommendation)
-                            if count > 0 {
-                                Text("\(count)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 8)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
 
                     ShareLink(item: shareMessage) {
                         Image(systemName: "square.and.arrow.up")
@@ -254,19 +252,18 @@ struct RecommendationCard: View {
 
                     Spacer()
 
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                            savedManager.toggleSave(recommendation.restaurant)
+                    Image(systemName: savedManager.isSaved(recommendation.restaurant) ? "bookmark.fill" : "bookmark")
+                        .font(.title3)
+                        .scaleEffect(savedManager.isSaved(recommendation.restaurant) ? 1.15 : 1.0)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 8)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            debugLog("Save tapped", recommendation.restaurant.name)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                savedManager.toggleSave(recommendation.restaurant)
+                            }
                         }
-                    } label: {
-                        Image(systemName: savedManager.isSaved(recommendation.restaurant) ? "bookmark.fill" : "bookmark")
-                            .font(.title3)
-                            .scaleEffect(savedManager.isSaved(recommendation.restaurant) ? 1.15 : 1.0)
-                            .padding(.vertical, 10)
-                            .padding(.horizontal, 8)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
                 }
                 .foregroundStyle(.primary)
                 .padding(.top, 8)
