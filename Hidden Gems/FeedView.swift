@@ -125,7 +125,12 @@ struct RecommendationCard: View {
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
     @State private var showingComments = false
-    
+
+    private var shareMessage: String {
+        let r = recommendation.restaurant
+        return "\(r.name) — \(r.cuisine) in \(r.location). Found on Hidden Gems."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // User info header
@@ -189,8 +194,9 @@ struct RecommendationCard: View {
                 }
                 
                 // Action buttons
-                HStack(spacing: 24) {
+                HStack(spacing: 20) {
                     Button {
+                        debugLog("Like tapped", recommendation.restaurant.name)
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                             likesManager.toggleLike(recommendation, by: authManager.currentUser.id)
                         }
@@ -208,13 +214,14 @@ struct RecommendationCard: View {
                                     .foregroundStyle(.primary)
                             }
                         }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 4)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 8)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    
+
                     Button {
+                        debugLog("Comment tapped", recommendation.restaurant.name)
                         showingComments = true
                     } label: {
                         HStack(spacing: 4) {
@@ -229,25 +236,24 @@ struct RecommendationCard: View {
                                     .foregroundStyle(.primary)
                             }
                         }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 4)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 8)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
 
-                    Button {
-                        // Share action
-                    } label: {
+                    ShareLink(item: shareMessage) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.title3)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 4)
+                            .foregroundStyle(.primary)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 8)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    
+
                     Spacer()
-                    
+
                     Button {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                             savedManager.toggleSave(recommendation.restaurant)
@@ -256,8 +262,8 @@ struct RecommendationCard: View {
                         Image(systemName: savedManager.isSaved(recommendation.restaurant) ? "bookmark.fill" : "bookmark")
                             .font(.title3)
                             .scaleEffect(savedManager.isSaved(recommendation.restaurant) ? 1.15 : 1.0)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 4)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 8)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
