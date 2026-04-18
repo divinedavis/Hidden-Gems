@@ -47,12 +47,28 @@ Hidden Gems/
 
 ## Development Workflow
 
-**Claude must push to GitHub after every change.**
+**Claude must push to GitHub *and* upload a new TestFlight build after every change.**
 
+### 1. Git
 - Repo: `git@github.com:divinedavis/Hidden-Gems.git` (branch: `main`)
 - After any code edit: `git add -A && git commit -m "<message>" && git push origin main`
 - Do not batch multiple unrelated changes into one commit — commit and push per logical change
 - An auto-sync script also exists at `~/auto-push-hidden-gems.sh` (logs to `~/hidden-gems-autopush.log`), but Claude should still push explicitly after each change rather than relying on it
+
+### 2. TestFlight
+After the git push, ship a new build so the latest state is always testable on device:
+
+1. Bump the build number (`CFBundleVersion`) — App Store Connect rejects duplicates.
+2. Archive and upload via Xcode (**Product → Archive → Distribute App → App Store Connect → Upload**) or via CLI:
+   ```sh
+   xcodebuild -project "Hidden Gems.xcodeproj" -scheme "Hidden Gems" \
+     -configuration Release -archivePath build/HiddenGems.xcarchive archive
+   xcodebuild -exportArchive -archivePath build/HiddenGems.xcarchive \
+     -exportPath build/export -exportOptionsPlist ExportOptions.plist
+   xcrun altool --upload-app -f build/export/*.ipa -t ios \
+     --apiKey <KEY_ID> --apiIssuer <ISSUER_ID>
+   ```
+3. Only report the task complete after both the git push **and** the TestFlight upload succeed.
 
 ## Author
 
