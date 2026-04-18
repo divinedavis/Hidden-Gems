@@ -56,19 +56,19 @@ Hidden Gems/
 - An auto-sync script also exists at `~/auto-push-hidden-gems.sh` (logs to `~/hidden-gems-autopush.log`), but Claude should still push explicitly after each change rather than relying on it
 
 ### 2. TestFlight
-After the git push, ship a new build so the latest state is always testable on device:
+After the git push, ship a new build so the latest state is always testable on device. A one-shot script does the bump + archive + export + upload:
 
-1. Bump the build number (`CFBundleVersion`) — App Store Connect rejects duplicates.
-2. Archive and upload via Xcode (**Product → Archive → Distribute App → App Store Connect → Upload**) or via CLI:
-   ```sh
-   xcodebuild -project "Hidden Gems.xcodeproj" -scheme "Hidden Gems" \
-     -configuration Release -archivePath build/HiddenGems.xcarchive archive
-   xcodebuild -exportArchive -archivePath build/HiddenGems.xcarchive \
-     -exportPath build/export -exportOptionsPlist ExportOptions.plist
-   xcrun altool --upload-app -f build/export/*.ipa -t ios \
-     --apiKey <KEY_ID> --apiIssuer <ISSUER_ID>
-   ```
-3. Only report the task complete after both the git push **and** the TestFlight upload succeed.
+```sh
+./scripts/ship.sh
+```
+
+First-time setup:
+1. Copy `scripts/asc-config.env.example` to `scripts/asc-config.env` and fill in the Issuer ID (App Store Connect → Users and Access → Integrations → App Store Connect API). `asc-config.env` is gitignored.
+2. Ensure the API key is at `~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8`.
+
+The script bumps `CURRENT_PROJECT_VERSION` automatically (ASC rejects duplicate build numbers), archives with `xcodebuild`, exports via `ExportOptions.plist`, and uploads via `xcrun altool`. Processing in App Store Connect takes ~5 minutes before the build is testable.
+
+Only report the task complete after both the git push **and** the TestFlight upload succeed.
 
 ## Author
 
