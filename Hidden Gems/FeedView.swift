@@ -273,6 +273,11 @@ struct RecommendationCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                debugLog("Card received tap (simultaneous)", recommendation.restaurant.name)
+            }
+        )
         .sheet(isPresented: $showingComments) {
             CommentsView(recommendation: recommendation)
                 .environment(commentsManager)
