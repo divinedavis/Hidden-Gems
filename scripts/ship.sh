@@ -63,4 +63,12 @@ xcrun altool \
     --apiKey "$ASC_KEY_ID" \
     --apiIssuer "$ASC_ISSUER_ID"
 
+# 5. Ensure the internal beta group auto-distributes every build.
+#    Idempotent — the script exits with a no-op message if already on.
+if command -v python3 >/dev/null 2>&1; then
+    echo "==> ensuring auto-distribute is enabled for ${ASC_INTERNAL_GROUP:-Hidden Gems}"
+    python3 "$(dirname "$0")/asc_auto_distribute.py" "${ASC_INTERNAL_GROUP:-Hidden Gems}" || \
+        echo "warn: asc_auto_distribute.py failed — enable auto-distribute manually in ASC if needed"
+fi
+
 echo "==> done. build $next uploaded; processing takes a few minutes before it's available in TestFlight."
