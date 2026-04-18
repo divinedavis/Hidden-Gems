@@ -42,8 +42,12 @@ create table if not exists posts (
   user_id uuid references users(id) on delete cascade not null,
   restaurant_id uuid references restaurants(id) on delete cascade not null,
   note text,
+  vibe_tags text[] not null default '{}',
   created_at timestamptz default now()
 );
+
+create index if not exists posts_vibe_tags_idx
+  on posts using gin (vibe_tags);
 
 -- ============================================================
 -- FOLLOWS
@@ -103,6 +107,7 @@ create or replace view feed as
     p.id,
     p.note,
     p.created_at,
+    p.vibe_tags,
     u.id as user_id,
     u.name as user_name,
     u.username,
@@ -121,6 +126,28 @@ create or replace view feed as
   join users u on u.id = p.user_id
   join restaurants r on r.id = p.restaurant_id
   order by p.created_at desc;
+
+-- Per-restaurant aggregate of every vibe ever applied to a post
+-- about that restaurant. Search tab reads this to filter by vibe.
+create or replace view restaurants_with_vibes as
+  select
+    r.id,
+    r.name,
+    r.cuisine,
+    r.location,
+    r.rating,
+    r.price_level,
+    r.image_url,
+    r.description,
+    coalesce(
+      (
+        select array_agg(distinct tag order by tag)
+        from posts p, unnest(p.vibe_tags) as tag
+        where p.restaurant_id = r.id
+      ),
+      '{}'
+    ) as vibe_tags
+  from restaurants r;
 
 -- ============================================================
 -- PGVECTOR — AI restaurant similarity search
