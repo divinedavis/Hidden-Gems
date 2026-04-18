@@ -53,7 +53,6 @@ Hidden Gems/
 - Repo: `git@github.com:divinedavis/Hidden-Gems.git` (branch: `main`)
 - After any code edit: `git add -A && git commit -m "<message>" && git push origin main`
 - Do not batch multiple unrelated changes into one commit — commit and push per logical change
-- An auto-sync script also exists at `~/auto-push-hidden-gems.sh` (logs to `~/hidden-gems-autopush.log`), but Claude should still push explicitly after each change rather than relying on it
 
 ### 2. TestFlight
 After the git push, ship a new build so the latest state is always testable on device. A one-shot script does the bump + archive + export + upload:
