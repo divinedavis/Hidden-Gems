@@ -129,6 +129,186 @@ struct RatingBadge: View {
     }
 }
 
+/// Instagram-style vibe tag picker. Curated vibes appear as suggestion
+/// chips; the user can also type their own and press return/space/comma
+/// to add a free-form tag. Tags are stored lowercased for consistent
+/// filtering, and display uses title-case for curated vibes.
+struct VibeTagPicker: View {
+    @Binding var tags: [String]
+    @Binding var input: String
+    let maxTags: Int
+
+    @FocusState private var inputFocused: Bool
+
+    private var canAddMore: Bool { tags.count < maxTags }
+
+    private var suggestions: [String] {
+        // Hide curated vibes the user has already picked.
+        Vibe.curated.filter { !tags.contains(Vibe.normalize($0)) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Selected tags
+            if !tags.isEmpty {
+                FlowLayout(spacing: 8) {
+                    ForEach(tags, id: \.self) { tag in
+                        VibeChip(
+                            label: displayLabel(for: tag),
+                            selected: true,
+                            trailingIcon: "xmark"
+                        )
+                        .onTapGesture { remove(tag) }
+                    }
+                }
+            }
+
+            // Free-form input
+            HStack {
+                Image(systemName: "number")
+                    .foregroundStyle(.secondary)
+                TextField("Add a vibe", text: $input)
+                    .focused($inputFocused)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+                    .onSubmit { commitInput() }
+                    .onChange(of: input) { _, newValue in
+                        // Instagram-style: finish a tag on space or comma.
+                        if newValue.hasSuffix(" ") || newValue.hasSuffix(",") {
+                            commitInput()
+                        }
+                    }
+                if !input.isEmpty {
+                    Button("Add") { commitInput() }
+                        .font(.subheadline)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(.systemGray6))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .opacity(canAddMore ? 1 : 0.5)
+            .disabled(!canAddMore)
+
+            // Suggestion chips
+            if !suggestions.isEmpty && canAddMore {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Suggestions")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    FlowLayout(spacing: 8) {
+                        ForEach(suggestions, id: \.self) { vibe in
+                            VibeChip(label: vibe, selected: false)
+                                .onTapGesture { add(vibe) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func commitInput() {
+        let raw = input.replacingOccurrences(of: ",", with: "")
+        add(raw)
+        input = ""
+    }
+
+    private func add(_ raw: String) {
+        let normalized = Vibe.normalize(raw)
+        guard !normalized.isEmpty, !tags.contains(normalized), canAddMore else { return }
+        tags.append(normalized)
+    }
+
+    private func remove(_ tag: String) {
+        tags.removeAll { $0 == tag }
+    }
+
+    /// Turn a stored lowercase tag back into a readable label. For
+    /// curated vibes we re-use the canonical casing; for free-form
+    /// tags we title-case each word.
+    private func displayLabel(for tag: String) -> String {
+        if let canonical = Vibe.curated.first(where: { Vibe.normalize($0) == tag }) {
+            return canonical
+        }
+        return tag.split(separator: " ").map { $0.capitalized }.joined(separator: " ")
+    }
+}
+
+/// A single pill-shaped vibe chip. Used in the tag picker and Search
+/// filter row. `selected` flips the color treatment; `trailingIcon`
+/// renders a small SF Symbol on the right (e.g. "xmark" for removal).
+struct VibeChip: View {
+    let label: String
+    var selected: Bool = false
+    var trailingIcon: String? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.subheadline)
+                .fontWeight(selected ? .semibold : .regular)
+            if let trailingIcon {
+                Image(systemName: trailingIcon)
+                    .font(.caption2)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule().fill(selected ? Color.blue : Color(.systemGray6))
+        )
+        .foregroundStyle(selected ? Color.white : Color.primary)
+        .overlay(
+            Capsule().stroke(selected ? Color.clear : Color(.separator), lineWidth: 0.5)
+        )
+        .contentShape(Capsule())
+    }
+}
+
+/// Simple left-to-right wrapping flow layout for chips. iOS 16+ ships
+/// with `Layout`, but writing our own keeps the behavior predictable
+/// and avoids the quirks of `Grid` for variable-width items.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var totalHeight: CGFloat = 0
+        var rowWidth: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if rowWidth + size.width > maxWidth, rowWidth > 0 {
+                totalHeight += rowHeight + spacing
+                rowWidth = 0
+                rowHeight = 0
+            }
+            rowWidth += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        totalHeight += rowHeight
+        return CGSize(width: maxWidth == .infinity ? rowWidth : maxWidth, height: totalHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            sub.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
 /// A single stat column used in the profile header (e.g. Followers, Following).
 struct StatView: View {
     let count: Int

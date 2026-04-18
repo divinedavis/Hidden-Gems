@@ -27,6 +27,26 @@ struct Recommendation: Identifiable {
     let note: String
     let date: Date
     let isSaved: Bool
+    var vibeTags: [String] = []
+}
+
+// Curated vibe suggestions surfaced in the tag picker + Search
+// filter row. Users can still type their own free-form tags; these
+// are just the ones we officially promote.
+enum Vibe {
+    static let curated: [String] = [
+        "Date Night Spots",
+        "Quick Lunch",
+        "Late Night Eats",
+        "Lowkey Vibes",
+        "Good for Solo Dining"
+    ]
+
+    /// Lowercased, trimmed form stored in Supabase so
+    /// "Date Night Spots" and "date night spots" are the same tag.
+    static func normalize(_ tag: String) -> String {
+        tag.trimmingCharacters(in: .whitespaces).lowercased()
+    }
 }
 
 struct Comment: Identifiable, Equatable {
@@ -108,6 +128,7 @@ struct SupabaseFeedPost: Codable {
     let imageUrl: String?
     let likeCount: Int
     let commentCount: Int
+    let vibeTags: [String]?
 
     enum CodingKeys: String, CodingKey {
         case id, note, username, cuisine, location, rating
@@ -121,6 +142,7 @@ struct SupabaseFeedPost: Codable {
         case imageUrl = "image_url"
         case likeCount = "like_count"
         case commentCount = "comment_count"
+        case vibeTags = "vibe_tags"
     }
 
     func toRecommendation() -> Recommendation {
@@ -149,7 +171,8 @@ struct SupabaseFeedPost: Codable {
             user: user,
             note: note ?? "",
             date: createdAt,
-            isSaved: false
+            isSaved: false,
+            vibeTags: vibeTags ?? []
         )
         rec.id = id
         return rec
@@ -273,23 +296,32 @@ class RecommendationsManager {
     /// The server enforces `auth.uid() = user_id` via RLS, so the `user_id`
     /// we pass must match the current session. Optimistically prepends the
     /// post to the local feed and rolls back on failure.
-    func createPost(restaurant: Restaurant, note: String, user: User) async throws {
+    func createPost(
+        restaurant: Restaurant,
+        note: String,
+        user: User,
+        vibeTags: [String] = []
+    ) async throws {
         struct NewPost: Encodable {
             let user_id: String
             let restaurant_id: String
             let note: String
+            let vibe_tags: [String]
         }
+        let normalizedTags = Array(Set(vibeTags.map(Vibe.normalize))).filter { !$0.isEmpty }
         let payload = NewPost(
             user_id: user.id.uuidString,
             restaurant_id: restaurant.id.uuidString,
-            note: note
+            note: note,
+            vibe_tags: normalizedTags
         )
-        var optimistic = Recommendation(
+        let optimistic = Recommendation(
             restaurant: restaurant,
             user: user,
             note: note,
             date: Date(),
-            isSaved: false
+            isSaved: false,
+            vibeTags: normalizedTags
         )
         recommendations.insert(optimistic, at: 0)
         do {

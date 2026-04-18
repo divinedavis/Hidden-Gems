@@ -21,9 +21,12 @@ struct CreatePostView: View {
     @State private var showingLocationPicker = false
     @State private var isPosting = false
     @State private var postErrorMessage: String?
-    
+    @State private var vibeTags: [String] = []
+    @State private var tagInput = ""
+
     private let maxPhotos = 5
     private let maxCaptionLength = 124
+    private let maxTags = 6
     
     var body: some View {
         NavigationStack {
@@ -135,14 +138,14 @@ struct CreatePostView: View {
                         HStack {
                             Text("Caption")
                                 .font(.headline)
-                            
+
                             Spacer()
-                            
+
                             Text("\(caption.count)/\(maxCaptionLength)")
                                 .font(.caption)
                                 .foregroundStyle(caption.count > maxCaptionLength ? .red : .secondary)
                         }
-                        
+
                         TextEditor(text: $caption)
                             .frame(height: 120)
                             .padding(8)
@@ -157,6 +160,24 @@ struct CreatePostView: View {
                                     caption = String(newValue.prefix(maxCaptionLength))
                                 }
                             }
+                    }
+
+                    // Vibes
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Vibes")
+                                .font(.headline)
+                            Spacer()
+                            Text("\(vibeTags.count)/\(maxTags)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        VibeTagPicker(
+                            tags: $vibeTags,
+                            input: $tagInput,
+                            maxTags: maxTags
+                        )
                     }
                 }
                 .padding()
@@ -200,7 +221,8 @@ struct CreatePostView: View {
                 try await recommendationsManager.createPost(
                     restaurant: restaurant,
                     note: caption,
-                    user: authManager.currentUser
+                    user: authManager.currentUser,
+                    vibeTags: vibeTags
                 )
                 isPosting = false
                 dismiss()
