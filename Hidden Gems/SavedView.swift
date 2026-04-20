@@ -50,7 +50,8 @@ struct SavedRestaurantCard: View {
     let restaurant: Restaurant
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
-    
+    @Environment(AuthManager.self) private var authManager
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Restaurant image
@@ -78,7 +79,10 @@ struct SavedRestaurantCard: View {
 
                     Button {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                            savedManager.unsave(restaurant)
+                            savedManager.toggleSave(
+                                restaurant,
+                                by: authManager.currentUser.id
+                            )
                         }
                     } label: {
                         Image(systemName: "bookmark.fill")

@@ -261,7 +261,10 @@ struct RecommendationCard: View {
                         .onTapGesture {
                             debugLog("Save tapped", recommendation.restaurant.name)
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                                savedManager.toggleSave(recommendation.restaurant)
+                                savedManager.toggleSave(
+                                    recommendation.restaurant,
+                                    by: authManager.currentUser.id
+                                )
                             }
                         }
                 }

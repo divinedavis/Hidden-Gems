@@ -50,6 +50,12 @@ struct ContentView: View {
         .environment(followManager)
         .environment(commentsManager)
         .environment(recommendationsManager)
+        .task(id: authManager.currentUser.id) {
+            guard authManager.isSignedIn else { return }
+            let uid = authManager.currentUser.id
+            await savedManager.loadSaved(userId: uid)
+            await followManager.loadFollowing(userId: uid)
+        }
         .sheet(isPresented: $showingCreatePost) {
             CreatePostView()
                 .environment(savedManager)

@@ -80,7 +80,8 @@ struct User: Identifiable, Equatable, Hashable {
 }
 
 // Codable struct matching a row from the Supabase 'comments' table
-// joined with the user who wrote the comment.
+// joined with the user who wrote the comment plus the ids of every
+// user who liked it (via the `comment_likes` FK relationship).
 struct SupabaseComment: Codable {
     let id: UUID
     let postId: UUID
@@ -89,6 +90,7 @@ struct SupabaseComment: Codable {
     let createdAt: Date
     let parentCommentId: UUID?
     let users: Author
+    let commentLikes: [LikeRow]?
 
     struct Author: Codable {
         let name: String
@@ -101,12 +103,18 @@ struct SupabaseComment: Codable {
         }
     }
 
+    struct LikeRow: Codable {
+        let userId: UUID
+        enum CodingKeys: String, CodingKey { case userId = "user_id" }
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, text, users
         case postId = "post_id"
         case userId = "user_id"
         case createdAt = "created_at"
         case parentCommentId = "parent_comment_id"
+        case commentLikes = "comment_likes"
     }
 }
 
@@ -333,31 +341,102 @@ class RecommendationsManager {
     }
 }
 
-// Observable class to manage saved restaurants across the app
+// Observable class to manage saved restaurants across the app.
+// Hydrates from `saved_restaurants` on sign-in and persists toggles
+// back to Supabase (previously all state was local and evaporated on
+// every cold launch).
 @Observable
 class SavedRestaurantsManager {
     var savedRestaurants: [Restaurant] = []
-    
+
     func isSaved(_ restaurant: Restaurant) -> Bool {
         savedRestaurants.contains { $0.id == restaurant.id }
     }
-    
-    func toggleSave(_ restaurant: Restaurant) {
-        if let index = savedRestaurants.firstIndex(where: { $0.id == restaurant.id }) {
-            savedRestaurants.remove(at: index)
+
+    func loadSaved(userId: UUID) async {
+        struct SavedRow: Decodable {
+            let restaurants: RestaurantPayload
+            struct RestaurantPayload: Decodable {
+                let id: UUID
+                let name: String
+                let cuisine: String?
+                let location: String?
+                let rating: Double?
+                let priceLevel: Int?
+                let imageUrl: String?
+                let description: String?
+                enum CodingKeys: String, CodingKey {
+                    case id, name, cuisine, location, rating, description
+                    case priceLevel = "price_level"
+                    case imageUrl = "image_url"
+                }
+            }
+        }
+        do {
+            let rows: [SavedRow] = try await supabase
+                .from("saved_restaurants")
+                .select("restaurants(id, name, cuisine, location, rating, price_level, image_url, description)")
+                .eq("user_id", value: userId.uuidString)
+                .execute()
+                .value
+            savedRestaurants = rows.map { row in
+                var r = Restaurant(
+                    name: row.restaurants.name,
+                    cuisine: row.restaurants.cuisine ?? "",
+                    location: row.restaurants.location ?? "",
+                    imageURL: row.restaurants.imageUrl ?? "",
+                    rating: row.restaurants.rating ?? 0,
+                    priceLevel: row.restaurants.priceLevel ?? 1,
+                    description: row.restaurants.description ?? ""
+                )
+                r.id = row.restaurants.id
+                return r
+            }
+        } catch {
+            debugLog("Saved restaurants fetch error", error)
+        }
+    }
+
+    /// Optimistically flips the local state, persists to Supabase, and
+    /// reverts on failure. `userId` must be the session user — RLS
+    /// enforces `auth.uid() = user_id`.
+    func toggleSave(_ restaurant: Restaurant, by userId: UUID) {
+        let wasSaved = isSaved(restaurant)
+        if wasSaved {
+            savedRestaurants.removeAll { $0.id == restaurant.id }
         } else {
             savedRestaurants.append(restaurant)
         }
-    }
-    
-    func save(_ restaurant: Restaurant) {
-        if !isSaved(restaurant) {
-            savedRestaurants.append(restaurant)
+        let restaurantId = restaurant.id
+        Task { @MainActor in
+            do {
+                if wasSaved {
+                    try await supabase.from("saved_restaurants")
+                        .delete()
+                        .eq("user_id", value: userId.uuidString)
+                        .eq("restaurant_id", value: restaurantId.uuidString)
+                        .execute()
+                } else {
+                    struct SaveRow: Encodable {
+                        let user_id: String
+                        let restaurant_id: String
+                    }
+                    try await supabase.from("saved_restaurants")
+                        .insert(SaveRow(
+                            user_id: userId.uuidString,
+                            restaurant_id: restaurantId.uuidString
+                        ))
+                        .execute()
+                }
+            } catch {
+                debugLog("Save toggle error", error)
+                if wasSaved {
+                    self.savedRestaurants.append(restaurant)
+                } else {
+                    self.savedRestaurants.removeAll { $0.id == restaurantId }
+                }
+            }
         }
-    }
-    
-    func unsave(_ restaurant: Restaurant) {
-        savedRestaurants.removeAll { $0.id == restaurant.id }
     }
 }
 
@@ -441,13 +520,17 @@ class CommentsManager {
 
     func fetchAllComments() async {
         do {
+            // Disambiguate the `users` embedding via its FK — `comment_likes`
+            // also references `users`, so without `!comments_user_id_fkey`
+            // PostgREST returns PGRST201 ambiguity.
             let rows: [SupabaseComment] = try await supabase
                 .from("comments")
-                .select("id, post_id, user_id, text, created_at, parent_comment_id, users(name, username, profile_image_url)")
+                .select("id, post_id, user_id, text, created_at, parent_comment_id, users!comments_user_id_fkey(name, username, profile_image_url), comment_likes(user_id)")
                 .order("created_at", ascending: false)
                 .execute()
                 .value
             var grouped: [UUID: [Comment]] = [:]
+            var likesMap: [UUID: Set<UUID>] = [:]
             for row in rows {
                 var user = User(
                     name: row.users.name,
@@ -457,12 +540,22 @@ class CommentsManager {
                     followingCount: 0
                 )
                 user.id = row.userId
-                var comment = Comment(user: user, text: row.text, date: row.createdAt, likeCount: 0)
+                let likers = Set((row.commentLikes ?? []).map(\.userId))
+                var comment = Comment(
+                    user: user,
+                    text: row.text,
+                    date: row.createdAt,
+                    likeCount: likers.count
+                )
                 comment.id = row.id
                 comment.parentCommentId = row.parentCommentId
                 grouped[row.postId, default: []].append(comment)
+                if !likers.isEmpty {
+                    likesMap[comment.id] = likers
+                }
             }
             comments = grouped
+            commentLikes = likesMap
             for (postId, list) in grouped {
                 serverCommentCounts[postId] = max(serverCommentCounts[postId, default: 0], list.count)
             }
@@ -564,25 +657,58 @@ class CommentsManager {
         commentLikes[comment.id, default: []].contains(userId)
     }
     
+    /// Optimistically flips the like locally, persists to Supabase, and
+    /// reverts on failure. `userId` must be the session user — RLS
+    /// enforces `auth.uid() = user_id`.
     func toggleCommentLike(_ comment: Comment, by userId: UUID) {
-        if commentLikes[comment.id, default: []].contains(userId) {
-            // Unlike
+        let wasLiked = commentLikes[comment.id, default: []].contains(userId)
+        if wasLiked {
             commentLikes[comment.id]?.remove(userId)
-            updateCommentLikeCount(comment, increment: false)
+            updateCommentLikeCount(comment.id, delta: -1)
         } else {
-            // Like
             commentLikes[comment.id, default: []].insert(userId)
-            updateCommentLikeCount(comment, increment: true)
+            updateCommentLikeCount(comment.id, delta: 1)
+        }
+        let commentId = comment.id
+        Task { @MainActor in
+            do {
+                if wasLiked {
+                    try await supabase.from("comment_likes")
+                        .delete()
+                        .eq("user_id", value: userId.uuidString)
+                        .eq("comment_id", value: commentId.uuidString)
+                        .execute()
+                } else {
+                    struct LikeRow: Encodable {
+                        let user_id: String
+                        let comment_id: String
+                    }
+                    try await supabase.from("comment_likes")
+                        .insert(LikeRow(
+                            user_id: userId.uuidString,
+                            comment_id: commentId.uuidString
+                        ))
+                        .execute()
+                }
+            } catch {
+                debugLog("Comment like toggle error", error)
+                if wasLiked {
+                    self.commentLikes[commentId, default: []].insert(userId)
+                    self.updateCommentLikeCount(commentId, delta: 1)
+                } else {
+                    self.commentLikes[commentId]?.remove(userId)
+                    self.updateCommentLikeCount(commentId, delta: -1)
+                }
+            }
         }
     }
-    
-    private func updateCommentLikeCount(_ comment: Comment, increment: Bool) {
-        // Find and update the comment in all recommendations
+
+    private func updateCommentLikeCount(_ commentId: UUID, delta: Int) {
         for (recommendationId, var commentsList) in comments {
-            if let index = commentsList.firstIndex(where: { $0.id == comment.id }) {
-                commentsList[index].likeCount += increment ? 1 : -1
+            if let index = commentsList.firstIndex(where: { $0.id == commentId }) {
+                commentsList[index].likeCount += delta
                 comments[recommendationId] = commentsList
-                break
+                return
             }
         }
     }
@@ -592,29 +718,77 @@ class CommentsManager {
     }
 }
 
-// Observable class to manage follows across the app
+// Observable class to manage follows across the app. Hydrates the
+// set of users the session user follows from `follows` on sign-in
+// and persists toggles back to Supabase (previously toggles never
+// reached the DB, so the feed was never actually personalized).
 @Observable
 class FollowManager {
     var followedUsers: Set<UUID> = []
-    // Placeholder until the view hydrates this from authManager.currentUser.
-    // Kept as an empty User so no sample data leaks into live code paths.
-    var currentUser: User = User(
-        name: "",
-        username: "",
-        profileImageURL: "",
-        followersCount: 0,
-        followingCount: 0
-    )
 
     func isFollowing(_ user: User) -> Bool {
         followedUsers.contains(user.id)
     }
 
-    func toggleFollow(_ user: User) {
-        if followedUsers.contains(user.id) {
+    func loadFollowing(userId: UUID) async {
+        struct FollowRow: Decodable {
+            let followingId: UUID
+            enum CodingKeys: String, CodingKey {
+                case followingId = "following_id"
+            }
+        }
+        do {
+            let rows: [FollowRow] = try await supabase
+                .from("follows")
+                .select("following_id")
+                .eq("follower_id", value: userId.uuidString)
+                .execute()
+                .value
+            followedUsers = Set(rows.map(\.followingId))
+        } catch {
+            debugLog("Following fetch error", error)
+        }
+    }
+
+    /// Optimistically flips local state, persists to Supabase, reverts
+    /// on failure. `followerId` must be the session user — RLS enforces
+    /// `auth.uid() = follower_id`.
+    func toggleFollow(_ user: User, by followerId: UUID) {
+        let wasFollowing = followedUsers.contains(user.id)
+        if wasFollowing {
             followedUsers.remove(user.id)
         } else {
             followedUsers.insert(user.id)
+        }
+        let targetId = user.id
+        Task { @MainActor in
+            do {
+                if wasFollowing {
+                    try await supabase.from("follows")
+                        .delete()
+                        .eq("follower_id", value: followerId.uuidString)
+                        .eq("following_id", value: targetId.uuidString)
+                        .execute()
+                } else {
+                    struct FollowRow: Encodable {
+                        let follower_id: String
+                        let following_id: String
+                    }
+                    try await supabase.from("follows")
+                        .insert(FollowRow(
+                            follower_id: followerId.uuidString,
+                            following_id: targetId.uuidString
+                        ))
+                        .execute()
+                }
+            } catch {
+                debugLog("Follow toggle error", error)
+                if wasFollowing {
+                    self.followedUsers.insert(targetId)
+                } else {
+                    self.followedUsers.remove(targetId)
+                }
+            }
         }
     }
 }

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Supabase
 
 struct ProfileView: View {
     var user: User? = nil // Optional user parameter - if nil, show current user
@@ -74,7 +75,10 @@ struct ProfileView: View {
                         let isFollowing = followManager.isFollowing(displayUser)
                         Button {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                                followManager.toggleFollow(displayUser)
+                                followManager.toggleFollow(
+                                    displayUser,
+                                    by: authManager.currentUser.id
+                                )
                             }
                         } label: {
                             Text(isFollowing ? "Following" : "Follow")
@@ -160,13 +164,30 @@ struct ProfileView: View {
             }
             Button("Cancel", role: .cancel) { }
         }
-        .onAppear {
-            loadRecommendations()
+        .task(id: displayUser.id) {
+            await loadRecommendations()
         }
     }
-    
-    private func loadRecommendations() {
-        myRecommendations = recommendationsManager.recommendations.filter { $0.user.id == displayUser.id }
+
+    /// Fetches this profile's posts directly from the `feed` view so
+    /// the list is populated even when the global feed tab hasn't been
+    /// visited yet (or when viewing another user's profile).
+    private func loadRecommendations() async {
+        let targetId = displayUser.id
+        do {
+            let posts: [SupabaseFeedPost] = try await supabase
+                .from("feed")
+                .select()
+                .eq("user_id", value: targetId.uuidString)
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+            myRecommendations = posts.map { $0.toRecommendation() }
+        } catch {
+            debugLog("Profile recs fetch error", error)
+            myRecommendations = recommendationsManager.recommendations
+                .filter { $0.user.id == targetId }
+        }
     }
 }
 

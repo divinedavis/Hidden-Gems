@@ -233,14 +233,24 @@ struct CreatePostView: View {
         }
     }
     
+    /// Rebuilds `selectedImages` from `selectedPhotos`. If a photo's
+    /// transferable load fails we drop it from `selectedPhotos` too so
+    /// the two arrays stay aligned — the remove-button uses the image
+    /// index against `selectedPhotos`, so any drift would delete the
+    /// wrong picker entry on the next tap.
     private func loadImages() async {
-        selectedImages.removeAll()
-        
+        var loaded: [UIImage] = []
+        var kept: [PhotosPickerItem] = []
         for item in selectedPhotos {
             if let data = try? await item.loadTransferable(type: Data.self),
                let image = UIImage(data: data) {
-                selectedImages.append(image)
+                loaded.append(image)
+                kept.append(item)
             }
+        }
+        selectedImages = loaded
+        if kept.count != selectedPhotos.count {
+            selectedPhotos = kept
         }
     }
 }
