@@ -91,8 +91,26 @@ class AuthManager {
             isSignedIn = true
         } catch {
             authLogger.error("apple sign-in failed: \(String(describing: error), privacy: .public)")
-            errorMessage = "Could not sign in with Apple. Please try again."
+            errorMessage = friendlyAppleErrorMessage(for: error)
         }
+    }
+
+    /// Maps Supabase errors we commonly see from the Apple id-token
+    /// exchange into something actionable for the tester, while still
+    /// surfacing the raw description when it's something we haven't
+    /// explicitly classified.
+    private func friendlyAppleErrorMessage(for error: Error) -> String {
+        let raw = error.localizedDescription.lowercased()
+        if raw.contains("provider") && (raw.contains("not enabled") || raw.contains("unsupported") || raw.contains("disabled")) {
+            return "Apple provider isn't enabled in Supabase yet. Open Authentication → Providers → Apple and enable it."
+        }
+        if raw.contains("audience") || raw.contains("invalid_client") || raw.contains("client_id") {
+            return "Apple provider is on, but this bundle id isn't registered. Add com.divinedavis.hiddengems under Apple → Client IDs (for native login)."
+        }
+        if raw.contains("nonce") {
+            return "Nonce mismatch. Try the Apple button again."
+        }
+        return "Apple sign-in failed: \(error.localizedDescription)"
     }
 
     // MARK: Sign Up
