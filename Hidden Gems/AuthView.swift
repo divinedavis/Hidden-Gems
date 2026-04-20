@@ -54,10 +54,31 @@ class AuthManager {
             await loadProfile(authId: session.user.id)
             isSignedIn = true
         } catch {
-            // Generic message — don't reveal whether the email exists.
-            debugLog("Sign in error", error)
-            errorMessage = "Incorrect email or password."
+            authLogger.error("sign in failed: \(String(describing: error), privacy: .public)")
+            errorMessage = friendlySignInMessage(for: error)
         }
+    }
+
+    /// Maps Supabase's generic sign-in errors into actionable copy.
+    /// "Incorrect email or password" is kept as the default catch-all
+    /// so we don't reveal whether a given email exists (account
+    /// enumeration protection), but we do surface email-confirmation
+    /// and rate-limit cases so users know what to do.
+    private func friendlySignInMessage(for error: Error) -> String {
+        let raw = error.localizedDescription.lowercased()
+        if raw.contains("email not confirmed") || raw.contains("not confirmed") || raw.contains("email_not_confirmed") {
+            return "Please confirm your email first. Check your inbox for the confirmation link Supabase sent when you signed up."
+        }
+        if raw.contains("rate limit") || raw.contains("too many requests") || raw.contains("over_request_rate_limit") {
+            return "Too many attempts. Wait a minute and try again."
+        }
+        if raw.contains("network") || raw.contains("offline") || raw.contains("connection") || raw.contains("internet") {
+            return "No internet connection. Check your connection and try again."
+        }
+        if raw.contains("invalid login credentials") || raw.contains("invalid credentials") || raw.contains("invalid_grant") {
+            return "Incorrect email or password."
+        }
+        return "Incorrect email or password."
     }
 
     // MARK: Sign In with Apple
