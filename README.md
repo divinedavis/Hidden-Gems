@@ -54,7 +54,19 @@ Hidden Gems/
 - After any code edit: `git add -A && git commit -m "<message>" && git push origin main`
 - Do not batch multiple unrelated changes into one commit — commit and push per logical change
 
-### 2. TestFlight
+### 2. Documentation review
+After every change, scan what was done and ask: *does this change introduce anything a future reader of this repo would benefit from knowing?* If yes, put it in this README (or a sibling `.md`) before moving on. Examples of things worth capturing:
+
+- New scripts, commands, or CLI flags
+- New config files, env vars, or required credentials
+- New setup steps (migrations to run, capabilities to enable, keys to rotate)
+- New architectural decisions or non-obvious workflows
+- New integrations with external services
+- Conventions other contributors should follow (naming, routing, etc.)
+
+Trivia like bug fixes, UI tweaks, or typo corrections usually don't need a README entry — the commit message covers them.
+
+### 3. TestFlight
 After the git push, ship a new build so the latest state is always testable on device. A one-shot script does the bump + archive + export + upload:
 
 ```sh
