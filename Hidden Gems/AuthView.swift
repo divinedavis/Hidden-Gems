@@ -7,6 +7,8 @@
 
 import SwiftUI
 import Supabase
+import AuthenticationServices
+import CryptoKit
 import os
 
 // MARK: - Auth Manager
@@ -55,6 +57,41 @@ class AuthManager {
             // Generic message — don't reveal whether the email exists.
             debugLog("Sign in error", error)
             errorMessage = "Incorrect email or password."
+        }
+    }
+
+    // MARK: Sign In with Apple
+    /// Exchanges an Apple identity token (plus the raw nonce we
+    /// supplied to the Apple sign-in request) for a Supabase session.
+    /// Requires the Apple provider to be enabled in the Supabase
+    /// dashboard with this app's bundle id registered as a native
+    /// client id.
+    func signInWithApple(idToken: String, nonce: String, fullName: String?) async {
+        errorMessage = nil
+        do {
+            let session = try await supabase.auth.signInWithIdToken(
+                credentials: .init(provider: .apple, idToken: idToken, nonce: nonce)
+            )
+            let authId = session.user.id
+            // If Apple gave us a name (only on the very first sign-in
+            // for this Apple ID on this app), write it into the users
+            // row so the profile isn't blank.
+            if let fullName, !fullName.isEmpty {
+                let usernameSeed = fullName
+                    .lowercased()
+                    .components(separatedBy: .whitespaces)
+                    .joined()
+                try? await supabase
+                    .from("users")
+                    .update(["name": fullName, "username": usernameSeed])
+                    .eq("id", value: authId.uuidString)
+                    .execute()
+            }
+            await loadProfile(authId: authId)
+            isSignedIn = true
+        } catch {
+            authLogger.error("apple sign-in failed: \(String(describing: error), privacy: .public)")
+            errorMessage = "Could not sign in with Apple. Please try again."
         }
     }
 
@@ -405,21 +442,25 @@ struct EmailAuthSheet: View {
 
 // MARK: - Underlined Fields
 
+/// Underlined field with an always-visible caption label above it
+/// (the plain Apple placeholder is too faint to be readable when
+/// the user is scanning the form for the first time). Label color
+/// deepens on focus to reinforce which field is active.
 private struct UnderlinedField: View {
-    let placeholder: String
+    let label: String
     @Binding var text: String
     let ink: Color
     let field: EmailAuthSheet.Field
     @FocusState.Binding var focused: EmailAuthSheet.Field?
 
     init(
-        _ placeholder: String,
+        _ label: String,
         text: Binding<String>,
         ink: Color,
         field: EmailAuthSheet.Field,
         focused: FocusState<EmailAuthSheet.Field?>.Binding
     ) {
-        self.placeholder = placeholder
+        self.label = label
         self._text = text
         self.ink = ink
         self.field = field
@@ -427,12 +468,16 @@ private struct UnderlinedField: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
-            TextField(placeholder, text: $text)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(focused == field ? ink : ink.opacity(0.55))
+                .animation(.easeInOut(duration: 0.15), value: focused)
+            TextField("", text: $text)
                 .focused($focused, equals: field)
                 .font(.body)
                 .foregroundStyle(ink)
-                .padding(.vertical, 14)
+                .padding(.vertical, 10)
             Rectangle()
                 .fill(focused == field ? ink.opacity(0.6) : ink.opacity(0.2))
                 .frame(height: 1)
@@ -442,20 +487,20 @@ private struct UnderlinedField: View {
 }
 
 private struct UnderlinedSecureField: View {
-    let placeholder: String
+    let label: String
     @Binding var text: String
     let ink: Color
     let field: EmailAuthSheet.Field
     @FocusState.Binding var focused: EmailAuthSheet.Field?
 
     init(
-        _ placeholder: String,
+        _ label: String,
         text: Binding<String>,
         ink: Color,
         field: EmailAuthSheet.Field,
         focused: FocusState<EmailAuthSheet.Field?>.Binding
     ) {
-        self.placeholder = placeholder
+        self.label = label
         self._text = text
         self.ink = ink
         self.field = field
@@ -463,17 +508,46 @@ private struct UnderlinedSecureField: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
-            SecureField(placeholder, text: $text)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(focused == field ? ink : ink.opacity(0.55))
+                .animation(.easeInOut(duration: 0.15), value: focused)
+            SecureField("", text: $text)
                 .focused($focused, equals: field)
                 .font(.body)
                 .foregroundStyle(ink)
-                .padding(.vertical, 14)
+                .padding(.vertical, 10)
             Rectangle()
                 .fill(focused == field ? ink.opacity(0.6) : ink.opacity(0.2))
                 .frame(height: 1)
                 .animation(.easeInOut(duration: 0.15), value: focused)
         }
+    }
+}
+
+// MARK: - Apple Sign In helpers
+
+/// Generates a cryptographically strong random string suitable for
+/// use as a Sign in with Apple nonce. Apple's identity token encodes
+/// SHA256(this value); Supabase verifies by hashing the raw nonce we
+/// pass and comparing.
+enum AppleSignInNonce {
+    static func random(length: Int = 32) -> String {
+        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        var bytes = [UInt8](repeating: 0, count: length)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        for byte in bytes {
+            result.append(charset[Int(byte) % charset.count])
+        }
+        return result
+    }
+
+    static func sha256(_ input: String) -> String {
+        let data = Data(input.utf8)
+        let hashed = SHA256.hash(data: data)
+        return hashed.compactMap { String(format: "%02x", $0) }.joined()
     }
 }
 

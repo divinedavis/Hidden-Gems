@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AuthenticationServices
 
 // MARK: - Landing View
 
@@ -20,6 +21,8 @@ struct LandingView: View {
     @State private var buttonOpacity: Double = 0
     @State private var buttonOffset: CGFloat = 24
     @State private var showEmailAuth = false
+    @State private var currentNonce: String?
+    @State private var appleErrorMessage: String?
 
     var body: some View {
         ZStack {
@@ -67,20 +70,19 @@ struct LandingView: View {
 
                 // Buttons
                 VStack(spacing: 12) {
-                    Button {
-                        openEmailAuth()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "apple.logo")
-                                .font(.body.weight(.semibold))
-                            Text("Continue with Apple")
-                                .fontWeight(.semibold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(.white, in: Capsule())
-                        .foregroundStyle(.black)
+                    SignInWithAppleButton(.continue) { request in
+                        let nonce = AppleSignInNonce.random()
+                        currentNonce = nonce
+                        appleErrorMessage = nil
+                        authManager.clearError()
+                        request.requestedScopes = [.fullName, .email]
+                        request.nonce = AppleSignInNonce.sha256(nonce)
+                    } onCompletion: { result in
+                        handleAppleResult(result)
                     }
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(height: 52)
+                    .clipShape(Capsule())
 
                     Button {
                         openEmailAuth()
@@ -94,6 +96,13 @@ struct LandingView: View {
                         .frame(height: 52)
                         .background(.white.opacity(0.2), in: Capsule())
                         .foregroundStyle(.white)
+                    }
+
+                    if let appleErrorMessage {
+                        Text(appleErrorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.white)
+                            .padding(.top, 2)
                     }
                 }
                 .padding(.horizontal, 24)
@@ -125,6 +134,43 @@ struct LandingView: View {
     private func openEmailAuth() {
         authManager.clearError()
         showEmailAuth = true
+    }
+
+    /// Bridges the `SignInWithAppleButton` completion to `AuthManager`.
+    /// On success we have an identity token (a JWT Apple signed with
+    /// the nonce-hash we provided). We pass the raw nonce to Supabase
+    /// so it can verify that hash against the token.
+    private func handleAppleResult(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let auth):
+            guard
+                let credential = auth.credential as? ASAuthorizationAppleIDCredential,
+                let tokenData = credential.identityToken,
+                let idToken = String(data: tokenData, encoding: .utf8),
+                let nonce = currentNonce
+            else {
+                appleErrorMessage = "Couldn't read Apple credential. Try again."
+                return
+            }
+            let fullName = [credential.fullName?.givenName, credential.fullName?.familyName]
+                .compactMap { $0 }
+                .joined(separator: " ")
+            Task {
+                await authManager.signInWithApple(
+                    idToken: idToken,
+                    nonce: nonce,
+                    fullName: fullName.isEmpty ? nil : fullName
+                )
+                if let err = authManager.errorMessage {
+                    appleErrorMessage = err
+                }
+            }
+        case .failure(let error):
+            // User-cancelled is not an error worth showing.
+            if (error as NSError).code != ASAuthorizationError.canceled.rawValue {
+                appleErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     private var gradient: some View {

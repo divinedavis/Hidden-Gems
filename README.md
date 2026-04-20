@@ -81,6 +81,16 @@ The script bumps `CURRENT_PROJECT_VERSION` automatically (ASC rejects duplicate 
 
 Only report the task complete after both the git push **and** the TestFlight upload succeed.
 
+## Sign in with Apple
+
+Native iOS Sign in with Apple is wired up. Requirements:
+
+- `Hidden Gems/HiddenGems.entitlements` declares `com.apple.developer.applesignin = ["Default"]` and `CODE_SIGN_ENTITLEMENTS` in `project.pbxproj` points at it.
+- **Supabase dashboard setup (one-time):** Authentication → Providers → Apple → *Enable*, then register `com.divinedavis.hiddengems` as a native **Client ID**. No secret key needed for the native iOS flow.
+- The code path generates a random nonce, passes SHA256(nonce) to Apple's authorization request, and sends the raw nonce + identity token to `supabase.auth.signInWithIdToken(...)`. See `LandingView.swift` + `AuthManager.signInWithApple` in `AuthView.swift`.
+
+If the Apple provider isn't enabled in Supabase yet, tapping the Apple button will fail with "Could not sign in with Apple. Please try again." — enable the provider and try again.
+
 ## Author
 
 Divine Davis
