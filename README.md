@@ -22,19 +22,6 @@ Follow the people you trust, share the spots worth sharing, and skip the ones fl
 
 ---
 
-## Screenshots
-
-<div align="center">
-
-<img src="screenshots/comments.png" width="220" alt="Comments"/>&nbsp;&nbsp;
-<img src="screenshots/create.png" width="220" alt="Create"/>
-
-<sub>Comments · New recommendation</sub>
-
-</div>
-
----
-
 ## Why Hidden Gems?
 
 Most food discovery apps optimize for the loudest crowds. Hidden Gems optimizes for the *right* crowd — the friends, coworkers, and locals whose taste you already trust. Every recommendation comes from a real person you chose to follow, with a note, a rating, and the vibe.
