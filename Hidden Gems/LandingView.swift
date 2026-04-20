@@ -10,6 +10,8 @@ import SwiftUI
 // MARK: - Landing View
 
 struct LandingView: View {
+    @Environment(AuthManager.self) private var authManager
+
     @State private var topOpacity: Double = 0
     @State private var brandOpacity: Double = 0
     @State private var bottomOpacity: Double = 0
@@ -17,8 +19,7 @@ struct LandingView: View {
     @State private var bodyOffset: CGFloat = 20
     @State private var buttonOpacity: Double = 0
     @State private var buttonOffset: CGFloat = 24
-
-    var onGetStarted: () -> Void
+    @State private var showEmailAuth = false
 
     var body: some View {
         ZStack {
@@ -66,7 +67,9 @@ struct LandingView: View {
 
                 // Buttons
                 VStack(spacing: 12) {
-                    Button(action: onGetStarted) {
+                    Button {
+                        openEmailAuth()
+                    } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "apple.logo")
                                 .font(.body.weight(.semibold))
@@ -79,7 +82,9 @@ struct LandingView: View {
                         .foregroundStyle(.black)
                     }
 
-                    Button(action: onGetStarted) {
+                    Button {
+                        openEmailAuth()
+                    } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "envelope.fill")
                             Text("Continue with email")
@@ -110,6 +115,16 @@ struct LandingView: View {
                 buttonOffset = 0
             }
         }
+        .sheet(isPresented: $showEmailAuth) {
+            EmailAuthSheet()
+                .environment(authManager)
+                .presentationCornerRadius(28)
+        }
+    }
+
+    private func openEmailAuth() {
+        authManager.clearError()
+        showEmailAuth = true
     }
 
     private var gradient: some View {
@@ -129,5 +144,5 @@ struct LandingView: View {
 }
 
 #Preview {
-    LandingView(onGetStarted: {})
+    LandingView().environment(AuthManager())
 }
