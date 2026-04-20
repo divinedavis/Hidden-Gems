@@ -26,17 +26,8 @@ Follow the people you trust, share the spots worth sharing, and skip the ones fl
 
 <div align="center">
 
-<img src="screenshots/feed.png" width="200" alt="Feed"/>&nbsp;&nbsp;
-<img src="screenshots/search.png" width="200" alt="Search"/>&nbsp;&nbsp;
-<img src="screenshots/saved.png" width="200" alt="Saved"/>&nbsp;&nbsp;
-<img src="screenshots/profile.png" width="200" alt="Profile"/>
-
-<sub>Feed · Search · Saved · Profile</sub>
-
-<br/><br/>
-
-<img src="screenshots/comments.png" width="200" alt="Comments"/>&nbsp;&nbsp;
-<img src="screenshots/create.png" width="200" alt="Create"/>
+<img src="screenshots/comments.png" width="220" alt="Comments"/>&nbsp;&nbsp;
+<img src="screenshots/create.png" width="220" alt="Create"/>
 
 <sub>Comments · New recommendation</sub>
 
