@@ -7,8 +7,11 @@
 
 import SwiftUI
 import Supabase
+import os
 
 // MARK: - Auth Manager
+
+private let authLogger = Logger(subsystem: "com.divinedavis.hiddengems", category: "auth")
 
 @Observable
 class AuthManager {
@@ -24,16 +27,33 @@ class AuthManager {
     var pendingAuthId: UUID?
 
     // MARK: Restore Session
-    // Supabase-swift persists the session to the keychain automatically,
-    // so on launch we just ask the client whether a session exists and,
-    // if so, hydrate the profile. Keeps users signed in across app restarts.
+    /// Restores the signed-in state from whatever the Supabase SDK has
+    /// persisted locally (keychain on Apple platforms). We consider the
+    /// user signed in as soon as the auth session is present — profile
+    /// hydration runs afterwards and, critically, its failure does NOT
+    /// sign the user out. Previously a transient profile fetch failure
+    /// (RLS, network) would flip isSignedIn back to false and force the
+    /// user through the sign-in flow on every cold launch.
     func restoreSession() async {
         defer { isRestoringSession = false }
         do {
             let session = try await supabase.auth.session
+            authLogger.info("restored session for user \(session.user.id, privacy: .public)")
+            var user = User(
+                name: currentUser.name,
+                username: currentUser.username,
+                profileImageURL: currentUser.profileImageURL,
+                followersCount: currentUser.followersCount,
+                followingCount: currentUser.followingCount
+            )
+            user.id = session.user.id
+            currentUser = user
+            isSignedIn = true
+            // Hydrate full profile in the background. Failure is ignored —
+            // the user stays signed in with whatever we already have.
             await loadProfile(authId: session.user.id)
         } catch {
-            // No persisted session — user will land on the sign-in flow.
+            authLogger.info("no persisted session (\(String(describing: error), privacy: .public))")
         }
     }
 
@@ -166,12 +186,26 @@ class AuthManager {
                 currentUser = user
                 isSignedIn = true
             } else {
-                // Auth exists but no profile row yet — go to profile setup
-                pendingAuthId = authId
-                needsProfileSetup = true
+                // Auth exists but no profile row yet — go to profile setup.
+                // This only happens for a brand-new sign-up that hasn't
+                // completed the ProfileSetup screen; on restoreSession we
+                // treat a missing row as a transient fetch issue (the row
+                // is created by a trigger on sign-up), so we leave
+                // isSignedIn/needsProfileSetup alone if we're already signed
+                // in and fall through.
+                if !isSignedIn {
+                    pendingAuthId = authId
+                    needsProfileSetup = true
+                }
             }
         } catch {
-            errorMessage = "Could not load profile. Please try again."
+            // Profile fetch failed. If we already consider the user signed in
+            // (restoreSession path), keep them signed in — they can still
+            // use the app. Only surface an error on the sign-in path.
+            authLogger.error("profile fetch failed: \(String(describing: error), privacy: .public)")
+            if !isSignedIn {
+                errorMessage = "Could not load profile. Please try again."
+            }
         }
     }
 
