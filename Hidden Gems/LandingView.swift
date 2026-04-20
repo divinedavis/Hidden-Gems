@@ -7,175 +7,124 @@
 
 import SwiftUI
 
-// MARK: - Animated Ring
-
-struct AnimatedRing: View {
-    let index: Int
-    let color1: Color
-    let color2: Color
-    @State private var scale: CGFloat = 0.3
-    @State private var opacity: Double = 0
-    @State private var rotation: Double = 0
-
-    var body: some View {
-        Circle()
-            .stroke(
-                AngularGradient(
-                    gradient: Gradient(colors: [color1, color2, color1]),
-                    center: .center,
-                    startAngle: .degrees(0),
-                    endAngle: .degrees(360)
-                ),
-                lineWidth: 2
-            )
-            .frame(width: 100 + CGFloat(index) * 80, height: 100 + CGFloat(index) * 80)
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .rotationEffect(.degrees(rotation))
-            .task {
-                withAnimation(
-                    .easeOut(duration: 0.7)
-                    .delay(Double(index) * 0.06)
-                ) {
-                    scale = 1.0
-                    opacity = 0.6 - Double(index) * 0.08
-                }
-                withAnimation(
-                    .linear(duration: Double(8 + index * 3))
-                    .repeatForever(autoreverses: false)
-                ) {
-                    rotation = index.isMultiple(of: 2) ? 360 : -360
-                }
-            }
-    }
-}
-
-// MARK: - Pulsing Glow
-
-struct PulsingGlow: View {
-    let color: Color
-    let size: CGFloat
-    @State private var scale: CGFloat = 0.8
-    @State private var opacity: Double = 0.3
-
-    var body: some View {
-        Circle()
-            .fill(
-                RadialGradient(
-                    gradient: Gradient(colors: [color.opacity(0.4), color.opacity(0)]),
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: size / 2
-                )
-            )
-            .frame(width: size, height: size)
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .task {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                withAnimation(
-                    .easeInOut(duration: 3)
-                    .repeatForever(autoreverses: true)
-                ) {
-                    scale = 1.2
-                    opacity = 0.6
-                }
-            }
-    }
-}
-
 // MARK: - Landing View
 
 struct LandingView: View {
-    @State private var titleOpacity: Double = 0
-    @State private var titleOffset: CGFloat = 30
-    @State private var subtitleOpacity: Double = 0
+    @State private var topOpacity: Double = 0
+    @State private var brandOpacity: Double = 0
+    @State private var bottomOpacity: Double = 0
+    @State private var bodyOpacity: Double = 0
+    @State private var bodyOffset: CGFloat = 20
     @State private var buttonOpacity: Double = 0
-    @State private var buttonOffset: CGFloat = 20
-    @State private var gemScale: CGFloat = 0.2
-    @State private var gemOpacity: Double = 0
-    @State private var gemRotation: Double = -30
+    @State private var buttonOffset: CGFloat = 24
 
     var onGetStarted: () -> Void
 
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            gradient
 
             VStack(spacing: 0) {
                 Spacer()
 
-                // Logo
-                Image("Logo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 440, height: 440)
-                    .scaleEffect(gemScale)
-                    .opacity(gemOpacity)
-                    .rotationEffect(.degrees(gemRotation))
-                    .padding(.bottom, 20)
-
+                // Stacked verbs: Discover / Hidden Gems / Share
+                VStack(spacing: 6) {
+                    Text("Discover")
+                        .font(.system(size: 38, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .opacity(topOpacity)
+                    Text("Hidden Gems")
+                        .font(.system(size: 42, weight: .bold))
+                        .foregroundStyle(.white)
+                        .opacity(brandOpacity)
+                    Text("Share")
+                        .font(.system(size: 38, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .opacity(bottomOpacity)
+                }
 
                 Spacer()
 
-                // Get Started button
-                Button(action: onGetStarted) {
-                    Text("Get Started")
-                        .font(.headline)
+                // Icon + headline + subtitle
+                VStack(alignment: .leading, spacing: 10) {
+                    Image(systemName: "fork.knife.circle.fill")
+                        .font(.title)
                         .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 18)
-                        .background(Color.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    Text("Local spots.\nActually good.")
+                        .font(.title.bold())
+                        .foregroundStyle(.white)
+                    Text("Restaurant recommendations from people who know the neighborhood.")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.85))
                 }
-                .padding(.horizontal, 32)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .opacity(bodyOpacity)
+                .offset(y: bodyOffset)
+
+                Spacer()
+
+                // Buttons
+                VStack(spacing: 12) {
+                    Button(action: onGetStarted) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "apple.logo")
+                                .font(.body.weight(.semibold))
+                            Text("Continue with Apple")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(.white, in: Capsule())
+                        .foregroundStyle(.black)
+                    }
+
+                    Button(action: onGetStarted) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "envelope.fill")
+                            Text("Continue with email")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(.white.opacity(0.2), in: Capsule())
+                        .foregroundStyle(.white)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 40)
                 .opacity(buttonOpacity)
                 .offset(y: buttonOffset)
-
-                // Sign in link
-                HStack(spacing: 4) {
-                    Text("Already have an account?")
-                        .foregroundStyle(.secondary)
-                    Button("Sign In") {
-                        onGetStarted()
-                    }
-                    .foregroundStyle(.black)
-                    .fontWeight(.semibold)
-                }
-                .font(.subheadline)
-                .opacity(buttonOpacity)
-                .padding(.top, 16)
-                .padding(.bottom, 50)
             }
         }
         .task {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                gemScale = 1.0
-                gemOpacity = 1.0
-                gemRotation = 0
+            withAnimation(.easeOut(duration: 0.5).delay(0.05)) { topOpacity = 1.0 }
+            withAnimation(.easeOut(duration: 0.5).delay(0.15)) { brandOpacity = 1.0 }
+            withAnimation(.easeOut(duration: 0.5).delay(0.25)) { bottomOpacity = 1.0 }
+            withAnimation(.easeOut(duration: 0.55).delay(0.35)) {
+                bodyOpacity = 1.0
+                bodyOffset = 0
             }
-            withAnimation(.easeOut(duration: 0.45).delay(0.1)) {
-                titleOpacity = 1.0
-                titleOffset = 0
-            }
-            withAnimation(.easeOut(duration: 0.45).delay(0.2)) {
-                subtitleOpacity = 1.0
-            }
-            withAnimation(.easeOut(duration: 0.45).delay(0.25)) {
+            withAnimation(.easeOut(duration: 0.55).delay(0.5)) {
                 buttonOpacity = 1.0
                 buttonOffset = 0
             }
         }
     }
 
-    private func ringColor1(for index: Int) -> Color {
-        let colors: [Color] = [.blue, .purple, .indigo, .cyan, .pink, .blue]
-        return colors[index % colors.count]
-    }
-
-    private func ringColor2(for index: Int) -> Color {
-        let colors: [Color] = [.purple, .pink, .blue, .indigo, .purple, .cyan]
-        return colors[index % colors.count]
+    private var gradient: some View {
+        LinearGradient(
+            colors: [
+                Color.black,
+                Color.black,
+                Color.blue.opacity(0.35),
+                Color.blue.opacity(0.75),
+                Color.blue
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
     }
 }
 
