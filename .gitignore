@@ -85,3 +85,7 @@ APIKeys.swift
 # ========================
 *.log
 *.orig
+
+# Local tooling / agent state
+.claude/
+supabase/

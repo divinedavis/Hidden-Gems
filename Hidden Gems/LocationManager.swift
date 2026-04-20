@@ -14,14 +14,30 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
     var authorizationStatus: CLAuthorizationStatus = .notDetermined
     var userLocation: CLLocation?
 
+    /// When true, the CoreLocation manager is never touched. Used by the
+    /// screenshot harness so a system permission dialog doesn't paint over
+    /// every captured screen.
+    private let isHarness: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["HG_TEST_EMAIL"] != nil
+        #else
+        return false
+        #endif
+    }()
+
     override init() {
         super.init()
+        guard !isHarness else {
+            authorizationStatus = .authorizedWhenInUse
+            return
+        }
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         authorizationStatus = manager.authorizationStatus
     }
 
     func requestPermission() {
+        guard !isHarness else { return }
         manager.requestWhenInUseAuthorization()
     }
 

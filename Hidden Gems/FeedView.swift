@@ -22,10 +22,14 @@ struct FeedView: View {
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
     @Environment(CommentsManager.self) private var commentsManager
+    @Environment(AuthManager.self) private var authManager
     @Binding var showingCreatePost: Bool
 
     @State private var isTabBarVisible = true
     @State private var lastScrollY: CGFloat = 0
+    #if DEBUG
+    @State private var debugCommentsRec: Recommendation?
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -108,6 +112,23 @@ struct FeedView: View {
             .background(Color(.systemGroupedBackground))
         }
         .toolbar(isTabBarVisible ? .visible : .hidden, for: .tabBar)
+        #if DEBUG
+        .sheet(item: $debugCommentsRec) { rec in
+            CommentsView(recommendation: rec)
+                .environment(commentsManager)
+                .environment(authManager)
+        }
+        .task(id: recommendationsManager.recommendations.count) {
+            // HG_TEST_SHEET=comments auto-presents CommentsView against
+            // the first feed recommendation so the screenshot script can
+            // capture the modal without needing taps into the Simulator.
+            guard ProcessInfo.processInfo.environment["HG_TEST_SHEET"] == "comments" else { return }
+            guard debugCommentsRec == nil,
+                  let first = recommendationsManager.recommendations.first else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            debugCommentsRec = first
+        }
+        #endif
     }
     
     private func refreshFeed() async {

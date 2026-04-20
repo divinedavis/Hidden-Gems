@@ -9,7 +9,13 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AuthManager.self) private var authManager
-    @State private var selectedTab = 0
+    @State private var selectedTab: Int = {
+        #if DEBUG
+        if let s = ProcessInfo.processInfo.environment["HG_TEST_TAB"],
+           let i = Int(s) { return i }
+        #endif
+        return 0
+    }()
     @State private var savedManager = SavedRestaurantsManager()
     @State private var likesManager = LikesManager()
     @State private var followManager = FollowManager()
@@ -56,6 +62,29 @@ struct ContentView: View {
             await savedManager.loadSaved(userId: uid)
             await followManager.loadFollowing(userId: uid)
         }
+        #if DEBUG
+        .task {
+            // HG_TEST_REEL=1 cycles tabs every 2s so the demo-gif capture
+            // script can record a single run that shows every screen.
+            if ProcessInfo.processInfo.environment["HG_TEST_REEL"] == "1" {
+                let tabs = [0, 1, 2, 3]
+                var i = 0
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 2_200_000_000)
+                    i = (i + 1) % tabs.count
+                    selectedTab = tabs[i]
+                }
+            }
+        }
+        .task {
+            // HG_TEST_SHEET=create auto-presents CreatePostView so the
+            // screenshot script can capture that modal without taps.
+            if ProcessInfo.processInfo.environment["HG_TEST_SHEET"] == "create" {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                showingCreatePost = true
+            }
+        }
+        #endif
         .sheet(isPresented: $showingCreatePost) {
             CreatePostView()
                 .environment(savedManager)
