@@ -18,7 +18,6 @@ private let authLogger = Logger(subsystem: "com.divinedavis.hiddengems", categor
 @Observable
 class AuthManager {
     var isSignedIn = false
-    var isRestoringSession = true
     var currentUser: User = User(name: "", username: "", profileImageURL: "", followersCount: 0, followingCount: 0)
     var errorMessage: String?
 
