@@ -31,7 +31,6 @@ class AuthManager {
     /// out. A transient RLS or network failure used to force users back
     /// to the sign-in screen on every cold launch.
     func restoreSession() async {
-        defer { isRestoringSession = false }
         do {
             let session = try await supabase.auth.session
             authLogger.info("restored session for user \(session.user.id, privacy: .public)")
