@@ -22,6 +22,25 @@ func debugLog(_ label: String, _ value: Any? = nil) {
     #endif
 }
 
+/// Instagram-style single-unit relative time: "now", "3m", "2h", "5d",
+/// "4w", "2y". SwiftUI's `Text(date, style: .relative)` produces
+/// compound strings like "5 days, 3 hr" which are too long for the
+/// feed card header and comment meta row.
+func shortRelative(from date: Date, now: Date = Date()) -> String {
+    let seconds = max(0, Int(now.timeIntervalSince(date)))
+    if seconds < 60 { return "now" }
+    let minutes = seconds / 60
+    if minutes < 60 { return "\(minutes)m" }
+    let hours = minutes / 60
+    if hours < 24 { return "\(hours)h" }
+    let days = hours / 24
+    if days < 7 { return "\(days)d" }
+    let weeks = days / 7
+    if weeks < 52 { return "\(weeks)w" }
+    let years = days / 365
+    return "\(years)y"
+}
+
 /// Returns a URL only if the string parses and uses the https scheme.
 /// Used to guard AsyncImage against missing, malformed, or non-https URLs
 /// (which could be used for SSRF if we ever proxied images server-side).

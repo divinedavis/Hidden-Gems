@@ -176,7 +176,7 @@ struct RecommendationCard: View {
                     
                     Spacer()
                     
-                    Text(recommendation.date, style: .relative)
+                    Text(shortRelative(from: recommendation.date))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

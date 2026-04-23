@@ -306,7 +306,7 @@ struct CommentRow: View {
                             .font(.subheadline)
                             .fontWeight(.semibold)
 
-                        Text(comment.date, style: .relative)
+                        Text(shortRelative(from: comment.date))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
