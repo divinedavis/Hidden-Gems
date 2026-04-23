@@ -61,6 +61,7 @@ struct ContentView: View {
             let uid = authManager.currentUser.id
             await savedManager.loadSaved(userId: uid)
             await followManager.loadFollowing(userId: uid)
+            await likesManager.loadLiked(userId: uid)
         }
         #if DEBUG
         .task {

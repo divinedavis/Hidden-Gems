@@ -456,6 +456,32 @@ class LikesManager {
         }
     }
 
+    /// Loads the set of posts the current user has already liked so the
+    /// hearts render filled on cold launch. Without this, a relaunched
+    /// user sees an empty heart on posts they've liked before — and
+    /// tapping triggers a duplicate INSERT against the (user_id, post_id)
+    /// primary key, which the server rejects and the catch-block reverts,
+    /// producing the "tap flashes but doesn't stick" behavior.
+    func loadLiked(userId: UUID) async {
+        struct LikeRow: Decodable {
+            let postId: UUID
+            enum CodingKeys: String, CodingKey {
+                case postId = "post_id"
+            }
+        }
+        do {
+            let rows: [LikeRow] = try await supabase
+                .from("likes")
+                .select("post_id")
+                .eq("user_id", value: userId.uuidString)
+                .execute()
+                .value
+            likedRecommendations = Set(rows.map(\.postId))
+        } catch {
+            debugLog("Liked posts fetch error", error)
+        }
+    }
+
     func isLiked(_ recommendation: Recommendation) -> Bool {
         likedRecommendations.contains(recommendation.id)
     }
