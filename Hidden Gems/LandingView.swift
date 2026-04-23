@@ -18,8 +18,6 @@ struct LandingView: View {
     @State private var bottomOpacity: Double = 0
     @State private var bodyOpacity: Double = 0
     @State private var bodyOffset: CGFloat = 20
-    @State private var buttonOpacity: Double = 0
-    @State private var buttonOffset: CGFloat = 24
     @State private var showEmailAuth = false
     @State private var currentNonce: String?
     @State private var appleErrorMessage: String?
@@ -68,10 +66,17 @@ struct LandingView: View {
 
                 Spacer()
 
-                // Buttons
+                // Buttons — rendered opaque at t=0 so the first tap is
+                // processed immediately. Staggering their reveal with
+                // the text intro queued taps behind in-flight animations
+                // and made "Continue with Apple" feel laggy on cold
+                // launch.
                 VStack(spacing: 12) {
                     SignInWithAppleButton(.continue) { request in
-                        let nonce = AppleSignInNonce.random()
+                        // Nonce is pre-generated in .task so the tap
+                        // path does zero work before handing off to
+                        // AuthenticationServices.
+                        let nonce = currentNonce ?? AppleSignInNonce.random()
                         currentNonce = nonce
                         appleErrorMessage = nil
                         authManager.clearError()
@@ -107,21 +112,18 @@ struct LandingView: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 40)
-                .opacity(buttonOpacity)
-                .offset(y: buttonOffset)
             }
         }
         .task {
+            if currentNonce == nil {
+                currentNonce = AppleSignInNonce.random()
+            }
             withAnimation(.easeOut(duration: 0.5).delay(0.05)) { topOpacity = 1.0 }
             withAnimation(.easeOut(duration: 0.5).delay(0.15)) { brandOpacity = 1.0 }
             withAnimation(.easeOut(duration: 0.5).delay(0.25)) { bottomOpacity = 1.0 }
             withAnimation(.easeOut(duration: 0.55).delay(0.35)) {
                 bodyOpacity = 1.0
                 bodyOffset = 0
-            }
-            withAnimation(.easeOut(duration: 0.55).delay(0.5)) {
-                buttonOpacity = 1.0
-                buttonOffset = 0
             }
         }
         .sheet(isPresented: $showEmailAuth) {

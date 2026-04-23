@@ -288,7 +288,11 @@ class RecommendationsManager {
             likesManager?.hydrate(from: posts)
             commentsManager?.hydrateCounts(from: posts)
             if let commentsManager {
-                await commentsManager.fetchAllComments()
+                // Detach comments hydration so the feed (and its tap
+                // handlers) become interactive the moment the posts
+                // query returns, instead of waiting on a full-table
+                // comments scan.
+                Task { await commentsManager.fetchAllComments() }
             }
         } catch {
             debugLog("Feed fetch error", error)
