@@ -28,6 +28,10 @@ struct Recommendation: Identifiable {
     let date: Date
     let isSaved: Bool
     var vibeTags: [String] = []
+    /// Photos the poster attached (max 5). If empty, the card falls
+    /// back to the restaurant's own cover photo. First entry doubles
+    /// as the profile-grid thumbnail and comments-sheet header.
+    var imageURLs: [String] = []
 }
 
 // Curated vibe suggestions surfaced in the tag picker + Search
@@ -135,6 +139,7 @@ struct SupabaseFeedPost: Codable {
     let rating: Double?
     let priceLevel: Int?
     let imageUrl: String?
+    let imageUrls: [String]?
     let likeCount: Int
     let commentCount: Int
     let vibeTags: [String]?
@@ -149,6 +154,7 @@ struct SupabaseFeedPost: Codable {
         case restaurantName = "restaurant_name"
         case priceLevel = "price_level"
         case imageUrl = "image_url"
+        case imageUrls = "image_urls"
         case likeCount = "like_count"
         case commentCount = "comment_count"
         case vibeTags = "vibe_tags"
@@ -184,6 +190,7 @@ struct SupabaseFeedPost: Codable {
             vibeTags: vibeTags ?? []
         )
         rec.id = id
+        rec.imageURLs = imageUrls ?? []
         return rec
     }
 }
@@ -422,7 +429,7 @@ class RecommendationsManager {
             copy.id = restaurant.id
             return copy
         }()
-        let optimistic = Recommendation(
+        var optimistic = Recommendation(
             restaurant: optimisticRestaurant,
             user: user,
             note: note,
@@ -430,6 +437,7 @@ class RecommendationsManager {
             isSaved: false,
             vibeTags: normalizedTags
         )
+        optimistic.imageURLs = imageUrls
         recommendations.insert(optimistic, at: 0)
         do {
             try await supabase.from("posts").insert(payload).execute()

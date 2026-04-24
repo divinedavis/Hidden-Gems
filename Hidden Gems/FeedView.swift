@@ -161,6 +161,42 @@ struct RecommendationCard: View {
         postViewsManager.markViewed(recommendation.id, by: authManager.currentUser.id)
     }
 
+    /// The photos to show in the card, in order. Prefers the post's
+    /// own uploaded array; falls back to the restaurant's cover photo
+    /// so a post without photos still shows something when the
+    /// restaurant has its own image.
+    private var cardImages: [String] {
+        if !recommendation.imageURLs.isEmpty {
+            return recommendation.imageURLs
+        }
+        let fallback = recommendation.restaurant.imageURL
+        return fallback.isEmpty ? [] : [fallback]
+    }
+
+    @ViewBuilder
+    private var photoCarousel: some View {
+        let images = cardImages
+        if images.count > 1 {
+            TabView {
+                ForEach(Array(images.enumerated()), id: \.offset) { _, url in
+                    SafeAsyncImage(urlString: url)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+            .indexViewStyle(.page(backgroundDisplayMode: .always))
+            .frame(maxWidth: .infinity)
+            .aspectRatio(4/3, contentMode: .fit)
+            .background(Color.gray.opacity(0.2))
+            .clipped()
+        } else {
+            SafeAsyncImage(urlString: images.first ?? "")
+                .frame(maxWidth: .infinity)
+                .aspectRatio(4/3, contentMode: .fit)
+                .background(Color.gray.opacity(0.2))
+                .clipped()
+        }
+    }
+
     private var shareMessage: String {
         let r = recommendation.restaurant
         return "\(r.name) — \(r.cuisine) in \(r.location). Found on Hidden Gems."
@@ -198,12 +234,11 @@ struct RecommendationCard: View {
             .buttonStyle(.plain)
             .padding()
             
-            // Restaurant image
-            SafeAsyncImage(urlString: recommendation.restaurant.imageURL)
-                .frame(maxWidth: .infinity)
-                .aspectRatio(4/3, contentMode: .fit)
-                .background(Color.gray.opacity(0.2))
-                .clipped()
+            // Restaurant image(s). Multi-image posts render as a
+            // paged TabView so the user can swipe left/right between
+            // photos; single-image posts stay a plain SafeAsyncImage
+            // to avoid the TabView's layout overhead.
+            photoCarousel
 
             // Restaurant info
             VStack(alignment: .leading, spacing: 4) {
