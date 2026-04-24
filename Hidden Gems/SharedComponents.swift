@@ -41,6 +41,47 @@ func shortRelative(from date: Date, now: Date = Date()) -> String {
     return "\(years)y"
 }
 
+/// Circular profile-picture view with a gray person.fill placeholder
+/// fallback. Prefers the current user's in-memory `localAvatarImage`
+/// when `user` is the signed-in account so a freshly uploaded avatar
+/// shows up on feed cards and comments immediately, before
+/// AsyncImage has had a chance to refetch the new URL from the CDN.
+struct UserAvatar: View {
+    let user: User
+    var size: CGFloat = 36
+    @Environment(AuthManager.self) private var authManager
+
+    var body: some View {
+        let isOwn = authManager.currentUser.id == user.id
+        ZStack {
+            Circle()
+                .fill(Color.gray.opacity(0.3))
+                .overlay {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: size * 0.44))
+                        .foregroundStyle(.gray)
+                }
+
+            if isOwn, let cached = authManager.localAvatarImage {
+                Image(uiImage: cached)
+                    .resizable()
+                    .scaledToFill()
+            } else if let url = safeImageURL(from: user.profileImageURL) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        Color.clear
+                    }
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+    }
+}
+
 /// Returns a URL only if the string parses and uses the https scheme.
 /// Used to guard AsyncImage against missing, malformed, or non-https URLs
 /// (which could be used for SSRF if we ever proxied images server-side).

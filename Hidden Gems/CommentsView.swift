@@ -136,14 +136,7 @@ struct CommentsView: View {
 
             // Comment input
             HStack(spacing: 12) {
-                Circle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 36, height: 36)
-                    .overlay {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.gray)
-                    }
+                UserAvatar(user: currentUser, size: 36)
 
                 TextField(
                     replyingTo == nil ? "Add a comment..." : "Add a reply...",
@@ -288,15 +281,7 @@ struct CommentRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            // User Avatar
-            Circle()
-                .fill(Color.gray.opacity(0.3))
-                .frame(width: 36, height: 36)
-                .overlay {
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.gray)
-                }
+            UserAvatar(user: comment.user, size: 36)
 
             // Comment Content
             VStack(alignment: .leading, spacing: 8) {

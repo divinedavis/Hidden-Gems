@@ -207,14 +207,8 @@ struct RecommendationCard: View {
             // User info header
             NavigationLink(destination: ProfileView(user: recommendation.user)) {
                 HStack {
-                    Circle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 36, height: 36)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .foregroundStyle(.gray)
-                        }
-                    
+                    UserAvatar(user: recommendation.user, size: 36)
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text(recommendation.user.name)
                             .font(.subheadline)
