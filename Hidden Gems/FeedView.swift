@@ -71,7 +71,17 @@ struct FeedView: View {
             .refreshable {
                 await refreshFeed()
             }
-            .task {
+            .task(id: authManager.currentUser.id) {
+                // Pinning the task to the user's id means it fires
+                // once when a session is established (or changes),
+                // not every time FeedView re-appears. Without the
+                // id, pushing into a profile and popping back would
+                // re-trigger the fetch, re-sort the feed, and bump
+                // the post the user just viewed down into the seen
+                // pool — which looked like the card they were just
+                // reading "disappeared." Manual refresh still works
+                // via pull-to-refresh.
+                guard authManager.isSignedIn else { return }
                 await refreshFeed()
             }
             .navigationTitle("Hidden Gems")
