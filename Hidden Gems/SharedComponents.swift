@@ -103,14 +103,12 @@ struct SafeAsyncImage: View {
     }
 }
 
-/// Cuisine, price level, vibe tags, and location rows for a
-/// restaurant. `vibeTags` is empty by default, which hides the
-/// hashtag strip; feed cards opt in by passing the post's tags so
-/// they show inline next to the price and scroll horizontally when
-/// the list is longer than the card is wide.
+/// Cuisine, price level, and location rows for a restaurant. Vibe
+/// tags are rendered as a standalone row by the feed card itself
+/// (see `VibeTagStrip`) so they can sit between the city and the
+/// post's caption.
 struct RestaurantMetaInfo: View {
     let restaurant: Restaurant
-    var vibeTags: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -123,27 +121,6 @@ struct RestaurantMetaInfo: View {
                 Text(String(repeating: "$", count: restaurant.priceLevel))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-
-                if !vibeTags.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(vibeTags, id: \.self) { tag in
-                                NavigationLink(destination: TagFeedView(tag: tag)) {
-                                    Text("#\(Self.displayTag(tag))")
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                        .padding(.horizontal, 9)
-                                        .padding(.vertical, 4)
-                                        .background(Color.blue.opacity(0.1))
-                                        .foregroundStyle(Color.blue)
-                                        .clipShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.trailing, 4)
-                    }
-                }
             }
 
             HStack(spacing: 4) {
@@ -161,6 +138,37 @@ struct RestaurantMetaInfo: View {
     /// on render.
     static func displayTag(_ tag: String) -> String {
         tag.split(separator: " ").map { $0.capitalized }.joined()
+    }
+}
+
+/// Horizontally-scrolling strip of hashtag chips. Each chip is a
+/// `NavigationLink` to `TagFeedView`, which filters the in-memory
+/// feed by the tapped tag. Rendered between the location row and
+/// the post caption on each feed card.
+struct VibeTagStrip: View {
+    let tags: [String]
+
+    var body: some View {
+        if !tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tags, id: \.self) { tag in
+                        NavigationLink(destination: TagFeedView(tag: tag)) {
+                            Text("#\(RestaurantMetaInfo.displayTag(tag))")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundStyle(Color.blue)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.trailing, 4)
+            }
+        }
     }
 }
 

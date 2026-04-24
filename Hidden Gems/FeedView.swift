@@ -199,10 +199,7 @@ struct RecommendationCard: View {
                             .font(.title3)
                             .fontWeight(.bold)
 
-                        RestaurantMetaInfo(
-                            restaurant: recommendation.restaurant,
-                            vibeTags: recommendation.vibeTags
-                        )
+                        RestaurantMetaInfo(restaurant: recommendation.restaurant)
                     }
 
                     Spacer()
@@ -210,6 +207,11 @@ struct RecommendationCard: View {
                     RatingBadge(rating: recommendation.restaurant.rating, font: .subheadline)
                 }
                 
+                // Vibe tags — horizontally scrollable strip sitting
+                // between the location row and the caption.
+                VibeTagStrip(tags: recommendation.vibeTags)
+                    .padding(.top, 6)
+
                 // User's note
                 if !recommendation.note.isEmpty {
                     Text(recommendation.note)
