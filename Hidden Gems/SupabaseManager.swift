@@ -47,8 +47,14 @@ enum MediaUploader {
                 userInfo: [NSLocalizedDescriptionKey: "Could not encode image as JPEG"]
             )
         }
-        let filename = "\(UUID().uuidString).jpg"
-        let path = "\(kind.rawValue)/\(ownerId.uuidString)/\(filename)"
+        // Swift's UUID.uuidString returns uppercase hex; Postgres casts
+        // `auth.uid()` to lowercase. The storage bucket's RLS policy
+        // compares the folder segment to auth.uid()::text, so the path
+        // has to be lowercased to match — otherwise uploads fail with
+        // "new row violates row-level security policy" even for the
+        // authenticated owner.
+        let filename = "\(UUID().uuidString.lowercased()).jpg"
+        let path = "\(kind.rawValue)/\(ownerId.uuidString.lowercased())/\(filename)"
         _ = try await supabase.storage
             .from("media")
             .upload(

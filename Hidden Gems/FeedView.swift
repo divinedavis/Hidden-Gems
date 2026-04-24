@@ -152,6 +152,12 @@ struct RecommendationCard: View {
         return "\(r.name) — \(r.cuisine) in \(r.location). Found on Hidden Gems."
     }
 
+    /// Turns the normalized lowercase storage form ("date night spot")
+    /// into a camel-cased hashtag ("DateNightSpot") for display.
+    private func displayTag(_ tag: String) -> String {
+        tag.split(separator: " ").map { $0.capitalized }.joined()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // User info header
@@ -212,6 +218,25 @@ struct RecommendationCard: View {
                     Text(recommendation.note)
                         .font(.body)
                         .padding(.top, 4)
+                }
+
+                // Vibe tags the poster chose. Rendered as lightweight
+                // hashtag chips so the tester's "date night spot" tag
+                // is visible on the feed card, not just in search.
+                if !recommendation.vibeTags.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(recommendation.vibeTags, id: \.self) { tag in
+                            Text("#\(displayTag(tag))")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.blue.opacity(0.08))
+                                .foregroundStyle(Color.blue)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.top, 6)
                 }
                 
                 // Action buttons — using onTapGesture directly (Button was
