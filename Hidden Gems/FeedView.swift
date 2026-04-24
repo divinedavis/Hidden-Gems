@@ -149,7 +149,6 @@ struct RecommendationCard: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(PostViewsManager.self) private var postViewsManager
     @State private var showingComments = false
-    @State private var showingImageViewer = false
     @State private var dwellTask: Task<Void, Never>?
 
     private let dwellThreshold: UInt64 = 2_000_000_000 // 2s
@@ -199,28 +198,12 @@ struct RecommendationCard: View {
             .buttonStyle(.plain)
             .padding()
             
-            // Restaurant image — tap or pinch to open a full-screen
-            // zoomable viewer. `SafeAsyncImage` itself stays fit
-            // within the card; zooming happens in the modal.
+            // Restaurant image
             SafeAsyncImage(urlString: recommendation.restaurant.imageURL)
                 .frame(maxWidth: .infinity)
                 .aspectRatio(4/3, contentMode: .fit)
                 .background(Color.gray.opacity(0.2))
                 .clipped()
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    markSeen()
-                    showingImageViewer = true
-                }
-                .gesture(
-                    MagnificationGesture()
-                        .onEnded { value in
-                            if value > 1.05 {
-                                markSeen()
-                                showingImageViewer = true
-                            }
-                        }
-                )
 
             // Restaurant info
             VStack(alignment: .leading, spacing: 4) {
@@ -376,9 +359,6 @@ struct RecommendationCard: View {
             CommentsView(recommendation: recommendation)
                 .environment(commentsManager)
                 .environment(authManager)
-        }
-        .fullScreenCover(isPresented: $showingImageViewer) {
-            ZoomableImageViewer(urlString: recommendation.restaurant.imageURL)
         }
     }
 }
