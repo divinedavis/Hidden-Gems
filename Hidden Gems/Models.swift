@@ -348,43 +348,28 @@ class RecommendationsManager {
     ) async {
         isLoading = true
         do {
+            // Cap the initial payload — at 1k+ posts the full table
+            // was slow to transfer + decode on device. The client can
+            // always pull-to-refresh for the newest 200.
             let posts: [SupabaseFeedPost] = try await supabase
                 .from("feed")
                 .select()
                 .order("created_at", ascending: false)
+                .limit(200)
                 .execute()
                 .value
-
-            // Which posts have been liked by someone the current user
-            // follows? Fetched as a small post-id set so the sort can
-            // elevate those within the unseen queue.
-            var socialPostIds: Set<UUID> = []
-            if let followedIds = followManager?.followedUsers, !followedIds.isEmpty {
-                let followedArray = followedIds.map(\.uuidString)
-                struct LikeRow: Decodable {
-                    let postId: UUID
-                    enum CodingKeys: String, CodingKey { case postId = "post_id" }
-                }
-                do {
-                    let rows: [LikeRow] = try await supabase
-                        .from("likes")
-                        .select("post_id")
-                        .in("user_id", values: followedArray)
-                        .execute()
-                        .value
-                    socialPostIds = Set(rows.map(\.postId))
-                } catch {
-                    debugLog("Social likes fetch error", error)
-                }
-            }
 
             // Three-tier sort, chronological desc within each tier.
             // Top: unseen AND liked by someone you follow.
             // Middle: unseen.
             // Bottom: seen (fallback so the feed never goes blank).
-            // Computed at fetch time so ordering stays stable during
-            // the session — pull-to-refresh applies the updated tiers.
+            // Follow-weighted elevation is temporarily disabled — the
+            // .in() filter on a large followed-user set was tanking
+            // the feed load. Re-add once we have a dedicated endpoint
+            // that returns just the post-id set.
             let seen = postViewsManager?.viewedPostIds ?? []
+            let socialPostIds: Set<UUID> = []
+            _ = followManager // silence unused-parameter warning
             func tier(_ post: SupabaseFeedPost) -> Int {
                 if seen.contains(post.id) { return 2 }
                 if socialPostIds.contains(post.id) { return 0 }
