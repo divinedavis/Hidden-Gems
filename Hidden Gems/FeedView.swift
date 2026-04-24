@@ -192,31 +192,47 @@ struct RecommendationCard: View {
                 .clipped()
 
             // Restaurant info
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(recommendation.restaurant.name)
-                            .font(.title3)
-                            .fontWeight(.bold)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(recommendation.restaurant.name)
+                    .font(.title3)
+                    .fontWeight(.bold)
 
-                        RestaurantMetaInfo(restaurant: recommendation.restaurant)
-                    }
+                // Meta row: cuisine • $$$  | scrollable vibe chips |  ★ rating
+                // Tags expand to fill whatever horizontal room is
+                // between the price and the star, and scroll when the
+                // list is wider than that slot.
+                HStack(spacing: 6) {
+                    Text(recommendation.restaurant.cuisine)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    Text("•")
+                        .foregroundStyle(.secondary)
+                    Text(String(repeating: "$", count: recommendation.restaurant.priceLevel))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
 
-                    Spacer()
+                    VibeTagStrip(tags: recommendation.vibeTags)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     RatingBadge(rating: recommendation.restaurant.rating, font: .subheadline)
+                        .fixedSize()
                 }
-                
-                // Vibe tags — horizontally scrollable strip sitting
-                // between the location row and the caption.
-                VibeTagStrip(tags: recommendation.vibeTags)
-                    .padding(.top, 6)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.caption)
+                    Text(recommendation.restaurant.location)
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
 
                 // User's note
                 if !recommendation.note.isEmpty {
                     Text(recommendation.note)
                         .font(.body)
-                        .padding(.top, 4)
+                        .padding(.top, 8)
                 }
                 
                 // Action buttons — using onTapGesture directly (Button was
