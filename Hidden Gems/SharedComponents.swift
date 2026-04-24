@@ -193,8 +193,11 @@ struct VibeTagPicker: View {
                     .submitLabel(.done)
                     .onSubmit { commitInput() }
                     .onChange(of: input) { _, newValue in
-                        // Instagram-style: finish a tag on space or comma.
-                        if newValue.hasSuffix(" ") || newValue.hasSuffix(",") {
+                        // Finish a tag on comma or return only — NOT on
+                        // space. Multi-word tags like "good date night"
+                        // stay as one entry instead of being split into
+                        // three.
+                        if newValue.hasSuffix(",") {
                             commitInput()
                         }
                     }

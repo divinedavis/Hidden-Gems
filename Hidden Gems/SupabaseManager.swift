@@ -7,6 +7,7 @@
 
 import Supabase
 import Foundation
+import UIKit
 
 // Shared Supabase client — use this everywhere in the app.
 //
@@ -23,3 +24,39 @@ private func makeSupabaseClient() -> SupabaseClient {
 }
 
 let supabase = makeSupabaseClient()
+
+// MARK: - Media uploader
+//
+// Uploads JPEG data to the public "media" bucket. Storage RLS scopes
+// writes to `<kind>/<auth.uid()>/...` so the path prefix must match
+// the caller's auth uid. Returns the public URL of the uploaded
+// object.
+enum MediaUploader {
+    enum Kind: String { case avatars, posts }
+
+    static func uploadJPEG(
+        _ image: UIImage,
+        kind: Kind,
+        ownerId: UUID,
+        compressionQuality: CGFloat = 0.82
+    ) async throws -> String {
+        guard let data = image.jpegData(compressionQuality: compressionQuality) else {
+            throw NSError(
+                domain: "MediaUploader",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Could not encode image as JPEG"]
+            )
+        }
+        let filename = "\(UUID().uuidString).jpg"
+        let path = "\(kind.rawValue)/\(ownerId.uuidString)/\(filename)"
+        _ = try await supabase.storage
+            .from("media")
+            .upload(
+                path,
+                data: data,
+                options: FileOptions(contentType: "image/jpeg", upsert: true)
+            )
+        let url = try supabase.storage.from("media").getPublicURL(path: path)
+        return url.absoluteString
+    }
+}

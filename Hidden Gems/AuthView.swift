@@ -235,6 +235,29 @@ class AuthManager {
         }
     }
 
+    // MARK: Edit Profile
+    /// Uploads a new profile picture to the media bucket and writes
+    /// the public URL back to the users row. Storage RLS allows writes
+    /// only under `avatars/<auth.uid()>/…`, so the path is rooted at
+    /// the current user's id.
+    func updateProfileImage(_ image: UIImage) async throws {
+        let authId = currentUser.id
+        let url = try await MediaUploader.uploadJPEG(
+            image,
+            kind: .avatars,
+            ownerId: authId
+        )
+        struct UpdateRow: Encodable { let profile_image_url: String }
+        try await supabase
+            .from("users")
+            .update(UpdateRow(profile_image_url: url))
+            .eq("id", value: authId.uuidString)
+            .execute()
+        var user = currentUser
+        user.profileImageURL = url
+        currentUser = user
+    }
+
     // MARK: Sign Out
     func signOut() {
         Task { try? await supabase.auth.signOut() }

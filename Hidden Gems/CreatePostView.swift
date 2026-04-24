@@ -218,11 +218,25 @@ struct CreatePostView: View {
         postErrorMessage = nil
         Task {
             do {
+                // Upload each picked photo to the media bucket before
+                // inserting the post so the row references durable
+                // public URLs, not in-memory UIImages.
+                let ownerId = authManager.currentUser.id
+                var uploadedURLs: [String] = []
+                for image in selectedImages {
+                    let url = try await MediaUploader.uploadJPEG(
+                        image,
+                        kind: .posts,
+                        ownerId: ownerId
+                    )
+                    uploadedURLs.append(url)
+                }
                 try await recommendationsManager.createPost(
                     restaurant: restaurant,
                     note: caption,
                     user: authManager.currentUser,
-                    vibeTags: vibeTags
+                    vibeTags: vibeTags,
+                    imageUrls: uploadedURLs
                 )
                 isPosting = false
                 dismiss()
@@ -413,6 +427,7 @@ struct AddRestaurantView: View {
     @State private var name = ""
     @State private var selectedCuisine = ""
     @State private var location = ""
+    @State private var priceLevel: Int = 2
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var locationCompleter = LocationCompleterManager()
@@ -453,6 +468,12 @@ struct AddRestaurantView: View {
                         Text("Select a cuisine").tag("")
                         ForEach(cuisines, id: \.self) { cuisine in
                             Text(cuisine).tag(cuisine)
+                        }
+                    }
+
+                    Picker("Price", selection: $priceLevel) {
+                        ForEach(1...4, id: \.self) { level in
+                            Text(String(repeating: "$", count: level)).tag(level)
                         }
                     }
 
@@ -523,21 +544,28 @@ struct AddRestaurantView: View {
                     let name: String
                     let cuisine: String
                     let location: String
+                    let price_level: Int
                 }
                 struct ReturnedRow: Decodable {
                     let id: UUID
                     let name: String
                     let cuisine: String?
                     let location: String?
+                    let priceLevel: Int?
+                    enum CodingKeys: String, CodingKey {
+                        case id, name, cuisine, location
+                        case priceLevel = "price_level"
+                    }
                 }
                 let rows: [ReturnedRow] = try await supabase
                     .from("restaurants")
                     .insert(InsertRow(
                         name: name.trimmingCharacters(in: .whitespaces),
                         cuisine: selectedCuisine,
-                        location: location.trimmingCharacters(in: .whitespaces)
+                        location: location.trimmingCharacters(in: .whitespaces),
+                        price_level: priceLevel
                     ))
-                    .select("id, name, cuisine, location")
+                    .select("id, name, cuisine, location, price_level")
                     .execute()
                     .value
 
@@ -548,7 +576,7 @@ struct AddRestaurantView: View {
                         location: row.location ?? "",
                         imageURL: "",
                         rating: 0,
-                        priceLevel: 1,
+                        priceLevel: row.priceLevel ?? priceLevel,
                         description: ""
                     )
                     r.id = row.id

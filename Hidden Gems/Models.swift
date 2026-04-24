@@ -66,7 +66,7 @@ struct User: Identifiable, Equatable, Hashable {
     var id: UUID = UUID()
     let name: String
     let username: String
-    let profileImageURL: String
+    var profileImageURL: String
     let followersCount: Int
     let followingCount: Int
 
@@ -312,23 +312,44 @@ class RecommendationsManager {
         restaurant: Restaurant,
         note: String,
         user: User,
-        vibeTags: [String] = []
+        vibeTags: [String] = [],
+        imageUrls: [String] = []
     ) async throws {
         struct NewPost: Encodable {
             let user_id: String
             let restaurant_id: String
             let note: String
             let vibe_tags: [String]
+            let image_urls: [String]
         }
         let normalizedTags = Array(Set(vibeTags.map(Vibe.normalize))).filter { !$0.isEmpty }
         let payload = NewPost(
             user_id: user.id.uuidString,
             restaurant_id: restaurant.id.uuidString,
             note: note,
-            vibe_tags: normalizedTags
+            vibe_tags: normalizedTags,
+            image_urls: imageUrls
         )
+        // Use the first uploaded image (if any) as the optimistic cover
+        // so the card doesn't show the restaurant's blank placeholder
+        // while the feed re-fetches.
+        let optimisticRestaurant: Restaurant = {
+            guard let firstImage = imageUrls.first, !firstImage.isEmpty,
+                  restaurant.imageURL.isEmpty else { return restaurant }
+            var copy = Restaurant(
+                name: restaurant.name,
+                cuisine: restaurant.cuisine,
+                location: restaurant.location,
+                imageURL: firstImage,
+                rating: restaurant.rating,
+                priceLevel: restaurant.priceLevel,
+                description: restaurant.description
+            )
+            copy.id = restaurant.id
+            return copy
+        }()
         let optimistic = Recommendation(
-            restaurant: restaurant,
+            restaurant: optimisticRestaurant,
             user: user,
             note: note,
             date: Date(),
@@ -654,7 +675,15 @@ class CommentsManager {
         let commentId = comment.id
         Task { @MainActor in
             do {
+                // Send the client-generated id so the server row shares
+                // the same UUID we're rendering locally. Without this,
+                // replying to your own just-posted comment fails: the
+                // reply's `parent_comment_id` points at the optimistic
+                // UUID, but the server stored a different
+                // gen_random_uuid() — the FK lookup misses and the
+                // insert is rejected.
                 struct NewComment: Encodable {
+                    let id: String
                     let post_id: String
                     let user_id: String
                     let text: String
@@ -662,6 +691,7 @@ class CommentsManager {
                 }
                 try await supabase.from("comments")
                     .insert(NewComment(
+                        id: commentId.uuidString,
                         post_id: postId.uuidString,
                         user_id: user.id.uuidString,
                         text: text,

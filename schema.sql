@@ -43,6 +43,7 @@ create table if not exists posts (
   restaurant_id uuid references restaurants(id) on delete cascade not null,
   note text,
   vibe_tags text[] not null default '{}',
+  image_urls text[] not null default '{}',
   created_at timestamptz default now()
 );
 
@@ -119,7 +120,7 @@ create or replace view feed as
     r.rating,
     r.price_level,
     r.description,
-    r.image_url,
+    coalesce((p.image_urls)[1], r.image_url) as image_url,
     (select count(*) from likes l where l.post_id = p.id) as like_count,
     (select count(*) from comments c where c.post_id = p.id) as comment_count
   from posts p
