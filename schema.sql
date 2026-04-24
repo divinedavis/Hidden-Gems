@@ -102,6 +102,22 @@ create table if not exists saved_restaurants (
 );
 
 -- ============================================================
+-- USER PROFILES VIEW — users + live follower / following counts
+-- ============================================================
+create or replace view user_profiles as
+  select
+    u.id,
+    u.name,
+    u.username,
+    u.email,
+    u.profile_image_url,
+    u.bio,
+    u.created_at,
+    (select count(*) from follows f where f.following_id = u.id) as followers_count,
+    (select count(*) from follows f where f.follower_id  = u.id) as following_count
+  from users u;
+
+-- ============================================================
 -- FEED VIEW — posts with full user + restaurant details
 -- ============================================================
 create or replace view feed as

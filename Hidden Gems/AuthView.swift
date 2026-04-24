@@ -211,8 +211,11 @@ class AuthManager {
                 }
             }
 
+            // Queries the `user_profiles` view instead of the raw
+            // `users` table so followers_count / following_count are
+            // populated from live aggregates over the follows table.
             let rows: [UserRow] = try await supabase
-                .from("users")
+                .from("user_profiles")
                 .select()
                 .eq("id", value: authId.uuidString)
                 .limit(1)

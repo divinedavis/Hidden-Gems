@@ -14,6 +14,9 @@ struct ProfileView: View {
     @State private var myRecommendations: [Recommendation] = []
     @State private var showingSettings = false
     @State private var showingEditProfile = false
+    @State private var liveFollowersCount: Int?
+    @State private var liveFollowingCount: Int?
+    @State private var wasFollowingAtLoad: Bool = false
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
     @Environment(FollowManager.self) private var followManager
@@ -26,6 +29,27 @@ struct ProfileView: View {
 
     private var isOwnProfile: Bool {
         user == nil || user?.id == authManager.currentUser.id
+    }
+
+    /// Followers count with an optimistic adjustment: if the session
+    /// user has toggled follow on the displayed profile since we
+    /// loaded the base count, the bump is reflected immediately
+    /// without waiting for a re-fetch.
+    private var displayedFollowersCount: Int {
+        let base = liveFollowersCount ?? displayUser.followersCount
+        guard !isOwnProfile else { return base }
+        let followsNow = followManager.isFollowing(displayUser)
+        if followsNow, !wasFollowingAtLoad { return max(0, base + 1) }
+        if !followsNow, wasFollowingAtLoad { return max(0, base - 1) }
+        return base
+    }
+
+    /// Own-profile following count derives from the authoritative
+    /// local set so tapping Follow on someone else bumps the number
+    /// instantly. Other profiles fall back to the server count.
+    private var displayedFollowingCount: Int {
+        if isOwnProfile { return followManager.followedUsers.count }
+        return liveFollowingCount ?? displayUser.followingCount
     }
     
     var body: some View {
@@ -86,8 +110,8 @@ struct ProfileView: View {
                     }
                     
                     HStack(spacing: 40) {
-                        StatView(count: displayUser.followersCount, label: "Followers")
-                        StatView(count: displayUser.followingCount, label: "Following")
+                        StatView(count: displayedFollowersCount, label: "Followers")
+                        StatView(count: displayedFollowingCount, label: "Following")
                         StatView(count: myRecommendations.count, label: "Recommendations")
                     }
                     .padding(.top, 8)
@@ -207,7 +231,40 @@ struct ProfileView: View {
                 .environment(authManager)
         }
         .task(id: displayUser.id) {
-            await loadRecommendations()
+            wasFollowingAtLoad = followManager.isFollowing(displayUser)
+            async let recs: Void = loadRecommendations()
+            async let counts: Void = loadLiveCounts()
+            _ = await (recs, counts)
+        }
+    }
+
+    /// Pulls the displayed user's live follower / following counts
+    /// from the `user_profiles` view so the stat row reflects the
+    /// actual state of the follows table, not the never-populated
+    /// placeholder columns on `users`.
+    private func loadLiveCounts() async {
+        struct Row: Decodable {
+            let followersCount: Int?
+            let followingCount: Int?
+            enum CodingKeys: String, CodingKey {
+                case followersCount = "followers_count"
+                case followingCount = "following_count"
+            }
+        }
+        do {
+            let rows: [Row] = try await supabase
+                .from("user_profiles")
+                .select("followers_count, following_count")
+                .eq("id", value: displayUser.id.uuidString)
+                .limit(1)
+                .execute()
+                .value
+            if let row = rows.first {
+                liveFollowersCount = row.followersCount ?? 0
+                liveFollowingCount = row.followingCount ?? 0
+            }
+        } catch {
+            debugLog("Profile counts fetch error", error)
         }
     }
 
