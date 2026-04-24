@@ -152,12 +152,6 @@ struct RecommendationCard: View {
         return "\(r.name) — \(r.cuisine) in \(r.location). Found on Hidden Gems."
     }
 
-    /// Turns the normalized lowercase storage form ("date night spot")
-    /// into a camel-cased hashtag ("DateNightSpot") for display.
-    private func displayTag(_ tag: String) -> String {
-        tag.split(separator: " ").map { $0.capitalized }.joined()
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // User info header
@@ -205,7 +199,10 @@ struct RecommendationCard: View {
                             .font(.title3)
                             .fontWeight(.bold)
 
-                        RestaurantMetaInfo(restaurant: recommendation.restaurant)
+                        RestaurantMetaInfo(
+                            restaurant: recommendation.restaurant,
+                            vibeTags: recommendation.vibeTags
+                        )
                     }
 
                     Spacer()
@@ -218,25 +215,6 @@ struct RecommendationCard: View {
                     Text(recommendation.note)
                         .font(.body)
                         .padding(.top, 4)
-                }
-
-                // Vibe tags the poster chose. Rendered as lightweight
-                // hashtag chips so the tester's "date night spot" tag
-                // is visible on the feed card, not just in search.
-                if !recommendation.vibeTags.isEmpty {
-                    FlowLayout(spacing: 6) {
-                        ForEach(recommendation.vibeTags, id: \.self) { tag in
-                            Text("#\(displayTag(tag))")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.blue.opacity(0.08))
-                                .foregroundStyle(Color.blue)
-                                .clipShape(Capsule())
-                        }
-                    }
-                    .padding(.top, 6)
                 }
                 
                 // Action buttons — using onTapGesture directly (Button was
@@ -326,6 +304,62 @@ struct RecommendationCard: View {
             CommentsView(recommendation: recommendation)
                 .environment(commentsManager)
                 .environment(authManager)
+        }
+    }
+}
+
+/// Tag-filtered feed pushed when the user taps a hashtag chip on
+/// any card. Reads from the in-memory `RecommendationsManager` so
+/// it shows up immediately without a round trip; if the feed hasn't
+/// been populated yet (e.g. tapping a tag from a profile card before
+/// the Feed tab has loaded) it fetches on appear.
+struct TagFeedView: View {
+    let tag: String
+    @Environment(RecommendationsManager.self) private var recommendationsManager
+    @Environment(LikesManager.self) private var likesManager
+    @Environment(CommentsManager.self) private var commentsManager
+
+    private var normalized: String { Vibe.normalize(tag) }
+
+    private var matches: [Recommendation] {
+        recommendationsManager.recommendations.filter { rec in
+            rec.vibeTags.contains { Vibe.normalize($0) == normalized }
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            if matches.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "number")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
+                    Text("No posts with this tag yet")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 80)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(matches) { recommendation in
+                        RecommendationCard(recommendation: recommendation)
+                            .padding(.bottom, 12)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("#\(RestaurantMetaInfo.displayTag(normalized))")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if recommendationsManager.recommendations.isEmpty {
+                await recommendationsManager.fetchFeed(
+                    likesManager: likesManager,
+                    commentsManager: commentsManager
+                )
+            }
         }
     }
 }
