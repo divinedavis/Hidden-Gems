@@ -137,7 +137,10 @@ struct ProfileView: View {
                             GridItem(.flexible(), spacing: 12)
                         ], spacing: 12) {
                             ForEach(myRecommendations) { recommendation in
-                                ProfileRecommendationCard(recommendation: recommendation)
+                                NavigationLink(destination: PostDetailView(recommendation: recommendation)) {
+                                    ProfileRecommendationCard(recommendation: recommendation)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                         .padding(.horizontal)
@@ -193,22 +196,19 @@ struct ProfileView: View {
 
 struct ProfileRecommendationCard: View {
     let recommendation: Recommendation
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
+            SafeAsyncImage(urlString: recommendation.restaurant.imageURL)
                 .aspectRatio(1, contentMode: .fit)
-                .overlay {
-                    Image(systemName: "photo")
-                        .font(.title2)
-                        .foregroundStyle(.gray)
-                }
+                .background(Color.gray.opacity(0.2))
+                .clipped()
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(recommendation.restaurant.name)
                     .font(.subheadline)
                     .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 RatingBadge(rating: recommendation.restaurant.rating, font: .caption2)
@@ -218,6 +218,24 @@ struct ProfileRecommendationCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+    }
+}
+
+/// Full post view pushed when a user taps a thumbnail on a profile
+/// grid. Reuses `RecommendationCard` so likes, saves, shares, and the
+/// comments sheet behave identically to the feed.
+struct PostDetailView: View {
+    let recommendation: Recommendation
+
+    var body: some View {
+        ScrollView {
+            RecommendationCard(recommendation: recommendation)
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(recommendation.restaurant.name)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
