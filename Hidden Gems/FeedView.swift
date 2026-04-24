@@ -250,12 +250,7 @@ struct RecommendationCard: View {
                     .font(.title3)
                     .fontWeight(.bold)
 
-                // Meta row: cuisine • $$$  | scrollable vibe chips |  ★ rating
-                // Tags expand to fill whatever horizontal room is
-                // between the price and the star, and scroll when the
-                // list is wider than that slot. When there are no
-                // tags, a Spacer takes over so the rating still pins
-                // to the right edge of the card.
+                // Meta row: cuisine • $$$ ............... ★ rating
                 HStack(spacing: 6) {
                     Text(recommendation.restaurant.cuisine)
                         .font(.subheadline)
@@ -268,12 +263,7 @@ struct RecommendationCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize()
 
-                    if recommendation.vibeTags.isEmpty {
-                        Spacer(minLength: 6)
-                    } else {
-                        VibeTagStrip(tags: recommendation.vibeTags)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    Spacer(minLength: 6)
 
                     RatingBadge(rating: recommendation.restaurant.rating, font: .subheadline)
                         .fixedSize()
@@ -286,6 +276,11 @@ struct RecommendationCard: View {
                         .font(.caption)
                 }
                 .foregroundStyle(.secondary)
+
+                // Vibe tags — horizontally scrollable strip sitting
+                // between the location row and the caption.
+                VibeTagStrip(tags: recommendation.vibeTags)
+                    .padding(.top, 6)
 
                 // User's note
                 if !recommendation.note.isEmpty {
