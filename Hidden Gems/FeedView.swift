@@ -82,6 +82,12 @@ struct FeedView: View {
                 // reading "disappeared." Manual refresh still works
                 // via pull-to-refresh.
                 guard authManager.isSignedIn else { return }
+                // Load the seen set before sorting the feed — on
+                // cold launch both this task and ContentView.task
+                // fire concurrently, and if refreshFeed won the
+                // race it would sort against an empty viewedPostIds
+                // and render already-seen posts at the top again.
+                await postViewsManager.load(userId: authManager.currentUser.id)
                 await refreshFeed()
             }
             .navigationTitle("Hidden Gems")
