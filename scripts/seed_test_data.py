@@ -1,19 +1,40 @@
 #!/usr/bin/env python3
 """
-Generate SQL to seed the Hidden Gems test environment with:
-  - 50 new users (profile pic + bio on each)
-  - 100 new posts from those users + existing users
-    * 1-5 photos per post
-    * >=1 vibe tag per post
-    * >=101 likes per post
-    * >=31 comments per post (including some replies)
+Seed the Hidden Gems test environment. Follows the spec in
+../TESTING.md — if that file changes, update the constants here too.
 
-Reads existing users/restaurants from /tmp/existing_*.json.
-Writes SQL to stdout.
+Current run produces:
+  - 100 new test users (profile pic + bio on every one) — keeps the
+    test-user pool large enough to supply 200 distinct likers per
+    post.
+  - 150 new restaurants spread across 60+ US cities.
+  - 1,000 new posts from the expanded user pool against any seeded
+    restaurant, each with:
+      * 1–5 photos
+      * 1–3 vibe tags
+      * 75–200 distinct likers
+      * 50–200 comments (half top-level, half threaded replies)
+
+Reads existing FKs from /tmp/existing_users.json and
+/tmp/existing_restaurants.json so generated posts reference real rows.
+Writes SQL to stdout; pipe into the management API (splitting on
+statement-terminating semicolons) to apply.
 """
 import json, random, uuid
 
-random.seed(7)
+random.seed(11)
+
+# ---------------------------------------------------------------------------
+# Spec knobs (mirror TESTING.md)
+# ---------------------------------------------------------------------------
+N_NEW_USERS = 100
+N_NEW_RESTAURANTS = 150
+N_NEW_POSTS = 1000
+
+LIKES_MIN, LIKES_MAX = 75, 200
+COMMENTS_MIN, COMMENTS_MAX = 50, 200
+PHOTOS_MIN, PHOTOS_MAX = 1, 5
+TAGS_MIN, TAGS_MAX = 1, 3
 
 # ---------------------------------------------------------------------------
 # Source data
@@ -23,14 +44,18 @@ FIRST = ['Alex','Jordan','Taylor','Morgan','Casey','Riley','Avery','Quinn',
         'Jamie','Kai','Logan','Parker','Reese','Skyler','Tatum','Remy',
         'Nico','Micah','Lennon','Sawyer','Kendall','Emery','Bailey','River',
         'Dakota','Phoenix','Winter','Wren','Rose','Bennett','Paxton','Zion',
-        'Atlas','Clay','Kit','Brooke','Mila','Leo','Hazel','Theo','Nora','Jude']
+        'Atlas','Clay','Kit','Brooke','Mila','Leo','Hazel','Theo','Nora','Jude',
+        'Ivy','Eden','Milo','Arlo','Silas','Juno','Cleo','Nova','Esme','Felix',
+        'Asher','Ezra','August','Wilder','Ember','Linus','Rafe','Callum','Selah','Tess']
 
 LAST = ['Lopez','Gupta','Chen','Miller','Clark','Lewis','Walker','Hall',
         'Allen','Young','King','Wright','Scott','Torres','Nguyen','Hill',
         'Flores','Adams','Baker','Carter','Mitchell','Roberts','Phillips','Evans',
         'Turner','Morgan','Cooper','Murphy','Rivera','Brooks','Price','Reed',
         'Cook','Bell','Kelly','Howard','Ward','Cox','Peterson','Gray',
-        'Ramirez','James','Watson','Russell','Bennett','Sanders','Foster','Hughes','Powell','Long']
+        'Ramirez','James','Watson','Russell','Bennett','Sanders','Foster','Hughes','Powell','Long',
+        'Kim','Patel','Singh','Khan','Shah','Ali','Cohen','Kaplan','Nakamura','Tanaka',
+        'Park','Sato','Ito','Garcia','Martinez','Hernandez','Rivera','Ortiz','Vargas','Castro']
 
 BIOS = [
     "Foodie always looking for a chill vibe.",
@@ -65,7 +90,8 @@ VIBE_TAGS = [
     "happy hour","cozy vibes","solo dining","group hangs",
     "late night eats","patio season","cocktail bar","hidden gem",
     "splurge worthy","view from the top","family friendly","quiet corner",
-    "music vibes","natural wine","chef driven","neighborhood staple"
+    "music vibes","natural wine","chef driven","neighborhood staple",
+    "outdoor seating","kid friendly","romantic dinner","business lunch"
 ]
 
 NOTES = [
@@ -89,6 +115,10 @@ NOTES = [
     "Staff knew the menu cold. Great recs.",
     "Bar seats are the move -- watch the kitchen work.",
     "Flavors were bright and thoughtful.",
+    "Found my new regular spot.",
+    "The kind of meal that ends with 'we have to come back'.",
+    "Unreal value for what you get.",
+    "Weekday reservation, empty dining room, perfection.",
 ]
 
 COMMENT_BODIES = [
@@ -124,9 +154,11 @@ COMMENT_BODIES = [
     "Did you sit inside or out?",
     "Great find!",
     "Chef was hands-on when I visited, super cool.",
-    "Wait, this is near me?",
     "How's the service there?",
     "Ordered everything on the menu last time, worth it.",
+    "Saving this for my anniversary dinner.",
+    "Their wine list is criminally underrated.",
+    "I still dream about their pasta.",
 ]
 
 FOOD_PHOTOS = [
@@ -150,7 +182,84 @@ FOOD_PHOTOS = [
     "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=1200&q=80",
     "https://images.unsplash.com/photo-1567620832903-9fc6debc209f?w=1200&q=80",
     "https://images.unsplash.com/photo-1555072956-7758afb20e8f?w=1200&q=80",
+    "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80",
+    "https://images.unsplash.com/photo-1550547660-d9450f859349?w=1200&q=80",
+    "https://images.unsplash.com/photo-1559847844-5315695dadae?w=1200&q=80",
+    "https://images.unsplash.com/photo-1555244162-803834f70033?w=1200&q=80",
 ]
+
+# 60 US cities across coasts, south, midwest, mountain, PNW.
+US_CITIES = [
+    ("New York", "NY"), ("Brooklyn", "NY"), ("Queens", "NY"), ("Rochester", "NY"),
+    ("Los Angeles", "CA"), ("San Francisco", "CA"), ("Oakland", "CA"),
+    ("San Diego", "CA"), ("Sacramento", "CA"), ("San Jose", "CA"),
+    ("Seattle", "WA"), ("Portland", "OR"),
+    ("Denver", "CO"), ("Boulder", "CO"),
+    ("Austin", "TX"), ("Houston", "TX"), ("Dallas", "TX"), ("San Antonio", "TX"),
+    ("Chicago", "IL"), ("Minneapolis", "MN"), ("Madison", "WI"),
+    ("Detroit", "MI"), ("Ann Arbor", "MI"),
+    ("Cleveland", "OH"), ("Columbus", "OH"), ("Cincinnati", "OH"),
+    ("Pittsburgh", "PA"), ("Philadelphia", "PA"),
+    ("Baltimore", "MD"), ("Washington", "DC"),
+    ("Richmond", "VA"), ("Arlington", "VA"),
+    ("Raleigh", "NC"), ("Charlotte", "NC"), ("Durham", "NC"), ("Asheville", "NC"),
+    ("Nashville", "TN"), ("Memphis", "TN"), ("Knoxville", "TN"),
+    ("Atlanta", "GA"), ("Savannah", "GA"),
+    ("Charleston", "SC"), ("Greenville", "SC"),
+    ("Miami", "FL"), ("Orlando", "FL"), ("Tampa", "FL"), ("Jacksonville", "FL"),
+    ("New Orleans", "LA"), ("Baton Rouge", "LA"),
+    ("Birmingham", "AL"), ("Little Rock", "AR"),
+    ("Boston", "MA"), ("Cambridge", "MA"), ("Providence", "RI"),
+    ("New Haven", "CT"), ("Hartford", "CT"),
+    ("Burlington", "VT"), ("Portland", "ME"),
+    ("Kansas City", "MO"), ("St. Louis", "MO"),
+    ("Omaha", "NE"), ("Des Moines", "IA"),
+    ("Salt Lake City", "UT"), ("Boise", "ID"),
+    ("Las Vegas", "NV"), ("Reno", "NV"),
+    ("Phoenix", "AZ"), ("Tucson", "AZ"),
+    ("Albuquerque", "NM"), ("Santa Fe", "NM"),
+    ("Honolulu", "HI"),
+]
+
+CUISINES = [
+    "Italian", "Mexican", "Japanese", "Korean", "Thai", "Chinese",
+    "Vietnamese", "Indian", "Mediterranean", "French", "American",
+    "Southern", "Soul Food", "BBQ", "Seafood", "Steakhouse", "Pizza",
+    "Burger", "New American", "Californian",
+]
+
+NAME_FIRST = [
+    "Little", "Big", "The", "Blue", "Red", "Golden", "Silver", "Copper",
+    "Wild", "Quiet", "Lazy", "Old", "New", "High", "Low", "Salt",
+    "Sugar", "Smoke", "Fire", "Honey", "Pine", "Olive", "Cedar", "Oak",
+    "Ivy", "Maple", "Bay",
+]
+
+NAME_SECOND = [
+    "Horse", "Owl", "Fox", "Wolf", "Lark", "Crow", "Cat", "Bear",
+    "Table", "Kitchen", "House", "Dock", "Lantern", "Barrel", "Harbor",
+    "Market", "Larder", "Alley", "Bridge", "Pantry", "Grove", "Garden",
+    "Room", "Oven", "Spoon", "Pickle",
+]
+
+FIRSTNAME_STYLE = ["Lena's", "Marco's", "Tommy's", "Ruby's", "Nora's", "Ezra's",
+                   "Otis's", "Pearl's", "Cass's", "Harlem's", "Arthur's",
+                   "Enzo's", "Ofelia's", "Raul's", "Dottie's", "Margo's",
+                   "Finch's", "Lula's", "Paolo's", "Vera's"]
+
+SUFFIX_STYLE = [" & Co.", " Supper Club", " House", " Bistro", " Trattoria",
+                " Grill", " Cantina", " Brasserie", " Kitchen", " Diner",
+                " Noodle Bar", " Osteria", " Tavern", " Cafe", " Room"]
+
+def make_restaurant_name(rng: random.Random) -> str:
+    style = rng.random()
+    if style < 0.25:
+        return rng.choice(FIRSTNAME_STYLE)
+    if style < 0.55:
+        return f"{rng.choice(NAME_FIRST)} {rng.choice(NAME_SECOND)}"
+    if style < 0.75:
+        return f"{rng.choice(NAME_FIRST)} {rng.choice(NAME_SECOND)}{rng.choice(SUFFIX_STYLE)}"
+    return f"{rng.choice(NAME_SECOND)}{rng.choice(SUFFIX_STYLE)}"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -163,17 +272,27 @@ def pg_text_array(items):
     return f"ARRAY[{inner}]::text[]"
 
 # ---------------------------------------------------------------------------
-# Existing ids (loaded from fetched JSON)
+# Existing ids + handles from /tmp/existing_*.json
 # ---------------------------------------------------------------------------
 existing_users = [row["id"] for row in json.load(open("/tmp/existing_users.json"))]
 existing_restaurants = [row["id"] for row in json.load(open("/tmp/existing_restaurants.json"))]
 
+# Dedupe new handles + emails against what's already in prod so seed
+# runs don't collide with previous seed runs.
+try:
+    _handles = json.load(open("/tmp/existing_user_handles.json"))
+    existing_usernames = {row["username"] for row in _handles if row.get("username")}
+    existing_emails    = {row["email"]    for row in _handles if row.get("email")}
+except (FileNotFoundError, json.JSONDecodeError):
+    existing_usernames, existing_emails = set(), set()
+
 # ---------------------------------------------------------------------------
-# 1. Generate 50 new users (with unique usernames + emails)
+# 1. Users
 # ---------------------------------------------------------------------------
-used_usernames = set()
+used_usernames = set(existing_usernames)
+used_emails    = set(existing_emails)
 new_users = []
-for i in range(50):
+for i in range(N_NEW_USERS):
     first = random.choice(FIRST)
     last  = random.choice(LAST)
     full  = f"{first} {last}"
@@ -182,8 +301,14 @@ for i in range(50):
     suf   = 0
     while un in used_usernames:
         suf += 1
-        un = f"@{base[:10]}{suf}"
+        un = f"@{base[:10]}s{suf}"
     used_usernames.add(un)
+    email = f"{base}{i}.seed2@example.com"
+    esuf = 0
+    while email in used_emails:
+        esuf += 1
+        email = f"{base}{i}.seed2_{esuf}@example.com"
+    used_emails.add(email)
     pic_kind = random.choice(["men", "women"])
     pic_num  = random.randint(1, 90)
     uid = str(uuid.uuid4())
@@ -191,23 +316,55 @@ for i in range(50):
         "id": uid,
         "name": full,
         "username": un,
-        "email": f"{base}{i}.seed@example.com",
+        "email": email,
         "profile_image_url": f"https://randomuser.me/api/portraits/{pic_kind}/{pic_num}.jpg",
         "bio": random.choice(BIOS),
     })
 
 # ---------------------------------------------------------------------------
-# 2. Generate 100 posts — authors round-robin through new users plus
-#    half drawn from existing users (so some test accounts have posts
-#    too).
+# 2. Restaurants
+# ---------------------------------------------------------------------------
+new_restaurants = []
+used_names = set()
+for _ in range(N_NEW_RESTAURANTS):
+    name = ""
+    for _ in range(30):
+        candidate = make_restaurant_name(random)
+        if candidate not in used_names:
+            name = candidate
+            used_names.add(name)
+            break
+    if not name:
+        name = make_restaurant_name(random) + " " + str(random.randint(1, 99))
+        used_names.add(name)
+    city, state = random.choice(US_CITIES)
+    location = f"{city}, {state}"
+    cuisine = random.choice(CUISINES)
+    rating  = round(random.uniform(3.8, 4.9), 1)
+    price   = random.randint(1, 4)
+    image   = random.choice(FOOD_PHOTOS)
+    new_restaurants.append({
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "cuisine": cuisine,
+        "location": location,
+        "rating": rating,
+        "price_level": price,
+        "image_url": image,
+    })
+
+# ---------------------------------------------------------------------------
+# 3. Posts
 # ---------------------------------------------------------------------------
 all_users = [u["id"] for u in new_users] + existing_users
+all_restaurants = [r["id"] for r in new_restaurants] + existing_restaurants
+
 new_posts = []
-for _ in range(100):
-    author = random.choice([u["id"] for u in new_users] + random.sample(existing_users, 15))
-    restaurant = random.choice(existing_restaurants)
-    photos = random.sample(FOOD_PHOTOS, random.randint(1, 5))
-    tags   = random.sample(VIBE_TAGS, random.randint(1, 3))
+for _ in range(N_NEW_POSTS):
+    author = random.choice(all_users)
+    restaurant = random.choice(all_restaurants)
+    photos = random.sample(FOOD_PHOTOS, random.randint(PHOTOS_MIN, PHOTOS_MAX))
+    tags   = random.sample(VIBE_TAGS, random.randint(TAGS_MIN, TAGS_MAX))
     note   = random.choice(NOTES)
     new_posts.append({
         "id": str(uuid.uuid4()),
@@ -222,48 +379,60 @@ for _ in range(100):
 # Emit SQL
 # ---------------------------------------------------------------------------
 print("-- ============================================================")
-print(f"-- Seed: 50 users + 100 posts (>=101 likes, >=31 comments each)")
+print(f"-- Seed: {N_NEW_USERS} users, {N_NEW_RESTAURANTS} restaurants, {N_NEW_POSTS} posts")
+print(f"-- Likes: {LIKES_MIN}-{LIKES_MAX} per post, distinct likers")
+print(f"-- Comments: {COMMENTS_MIN}-{COMMENTS_MAX} per post")
+print("-- See TESTING.md for the spec.")
 print("-- ============================================================\n")
 
 # Users
 print("-- Users")
-vals = [f"('{u['id']}'::uuid, {esc(u['name'])}, {esc(u['username'])}, {esc(u['email'])}, {esc(u['profile_image_url'])}, {esc(u['bio'])})" for u in new_users]
+vals = [
+    f"('{u['id']}'::uuid, {esc(u['name'])}, {esc(u['username'])}, {esc(u['email'])}, {esc(u['profile_image_url'])}, {esc(u['bio'])})"
+    for u in new_users
+]
 print("insert into users (id, name, username, email, profile_image_url, bio) values")
 print(",\n".join(vals) + ";\n")
 
-# Posts
-print("-- Posts")
-vals = []
-for p in new_posts:
-    vals.append(
-        f"('{p['id']}'::uuid, '{p['user_id']}'::uuid, '{p['restaurant_id']}'::uuid, "
-        f"{esc(p['note'])}, {pg_text_array(p['vibe_tags'])}, {pg_text_array(p['image_urls'])})"
-    )
-print("insert into posts (id, user_id, restaurant_id, note, vibe_tags, image_urls) values")
+# Restaurants
+print("-- Restaurants")
+vals = [
+    f"('{r['id']}'::uuid, {esc(r['name'])}, {esc(r['cuisine'])}, {esc(r['location'])}, {r['rating']}, {r['price_level']}, {esc(r['image_url'])})"
+    for r in new_restaurants
+]
+print("insert into restaurants (id, name, cuisine, location, rating, price_level, image_url) values")
 print(",\n".join(vals) + ";\n")
 
-# Likes — 101-150 per post, sampled from any user except the author.
-print("-- Likes (>=101 per post)")
+# Posts (chunked to stay under the 1MB request ceiling)
+print("-- Posts")
+post_rows = [
+    f"('{p['id']}'::uuid, '{p['user_id']}'::uuid, '{p['restaurant_id']}'::uuid, {esc(p['note'])}, {pg_text_array(p['vibe_tags'])}, {pg_text_array(p['image_urls'])})"
+    for p in new_posts
+]
+CHUNK = 500
+for i in range(0, len(post_rows), CHUNK):
+    print("insert into posts (id, user_id, restaurant_id, note, vibe_tags, image_urls) values")
+    print(",\n".join(post_rows[i:i+CHUNK]) + ";\n")
+
+# Likes — distinct likers per post
+print("-- Likes")
 like_rows = []
 for p in new_posts:
     pool = [u for u in all_users if u != p["user_id"]]
-    k = random.randint(101, min(150, len(pool)))
+    k = random.randint(LIKES_MIN, min(LIKES_MAX, len(pool)))
     likers = random.sample(pool, k)
     for lk in likers:
         like_rows.append(f"('{lk}'::uuid, '{p['id']}'::uuid)")
-# Chunk the INSERT to keep each statement reasonable.
-CHUNK = 2000
-for i in range(0, len(like_rows), CHUNK):
+LCHUNK = 2000
+for i in range(0, len(like_rows), LCHUNK):
     print("insert into likes (user_id, post_id) values")
-    print(",\n".join(like_rows[i:i+CHUNK]) + "\non conflict do nothing;\n")
+    print(",\n".join(like_rows[i:i+LCHUNK]) + "\non conflict do nothing;\n")
 
-# Comments — 31-45 per post, half top-level and half replies to
-# random top-level comments on the same post.
-print("-- Comments (>=31 per post)")
-top_level_by_post = {}
+# Comments — half top-level, half replies
+print("-- Comments")
 all_comment_rows = []
 for p in new_posts:
-    n = random.randint(31, 45)
+    n = random.randint(COMMENTS_MIN, COMMENTS_MAX)
     top_n = n // 2 + 1
     reply_n = n - top_n
     top_ids = []
@@ -283,9 +452,8 @@ for p in new_posts:
         all_comment_rows.append(
             f"('{cid}'::uuid, '{p['id']}'::uuid, '{author}'::uuid, {esc(body)}, '{parent}'::uuid)"
         )
-    top_level_by_post[p["id"]] = top_ids
 
-# Insert comments in chunks.
-for i in range(0, len(all_comment_rows), CHUNK):
+CCHUNK = 2000
+for i in range(0, len(all_comment_rows), CCHUNK):
     print("insert into comments (id, post_id, user_id, text, parent_comment_id) values")
-    print(",\n".join(all_comment_rows[i:i+CHUNK]) + ";\n")
+    print(",\n".join(all_comment_rows[i:i+CCHUNK]) + ";\n")

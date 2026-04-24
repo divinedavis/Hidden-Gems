@@ -24,6 +24,7 @@ struct FeedView: View {
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
     @Environment(PostViewsManager.self) private var postViewsManager
+    @Environment(FollowManager.self) private var followManager
     @Binding var showingCreatePost: Bool
 
     @State private var isTabBarVisible = true
@@ -82,12 +83,16 @@ struct FeedView: View {
                 // reading "disappeared." Manual refresh still works
                 // via pull-to-refresh.
                 guard authManager.isSignedIn else { return }
-                // Load the seen set before sorting the feed — on
-                // cold launch both this task and ContentView.task
-                // fire concurrently, and if refreshFeed won the
-                // race it would sort against an empty viewedPostIds
-                // and render already-seen posts at the top again.
-                await postViewsManager.load(userId: authManager.currentUser.id)
+                let uid = authManager.currentUser.id
+                // Load the seen set and follow list before sorting the
+                // feed — on cold launch both this task and
+                // ContentView.task fire concurrently, and if refreshFeed
+                // won the race it would sort against empty sets
+                // (surfacing seen posts at the top, and not elevating
+                // posts liked by users you follow).
+                async let views: Void = postViewsManager.load(userId: uid)
+                async let follows: Void = followManager.loadFollowing(userId: uid)
+                _ = await (views, follows)
                 await refreshFeed()
             }
             .navigationTitle("Hidden Gems")
@@ -152,7 +157,8 @@ struct FeedView: View {
         await recommendationsManager.fetchFeed(
             likesManager: likesManager,
             commentsManager: commentsManager,
-            postViewsManager: postViewsManager
+            postViewsManager: postViewsManager,
+            followManager: followManager
         )
     }
 }
@@ -414,6 +420,7 @@ struct TagFeedView: View {
     @Environment(LikesManager.self) private var likesManager
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(PostViewsManager.self) private var postViewsManager
+    @Environment(FollowManager.self) private var followManager
 
     private var normalized: String { Vibe.normalize(tag) }
 
@@ -454,7 +461,8 @@ struct TagFeedView: View {
                 await recommendationsManager.fetchFeed(
                     likesManager: likesManager,
                     commentsManager: commentsManager,
-                    postViewsManager: postViewsManager
+                    postViewsManager: postViewsManager,
+                    followManager: followManager
                 )
             }
         }

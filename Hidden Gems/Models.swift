@@ -343,7 +343,8 @@ class RecommendationsManager {
     func fetchFeed(
         likesManager: LikesManager? = nil,
         commentsManager: CommentsManager? = nil,
-        postViewsManager: PostViewsManager? = nil
+        postViewsManager: PostViewsManager? = nil,
+        followManager: FollowManager? = nil
     ) async {
         isLoading = true
         do {
@@ -353,16 +354,45 @@ class RecommendationsManager {
                 .order("created_at", ascending: false)
                 .execute()
                 .value
-            // Sort unseen first, then seen — chronological desc within
-            // each group. This is computed at fetch time so the
-            // ordering stays stable during the session; cards don't
-            // jump to the bottom the instant dwell marks them as
-            // seen. Next refresh re-sorts with the updated set.
+
+            // Which posts have been liked by someone the current user
+            // follows? Fetched as a small post-id set so the sort can
+            // elevate those within the unseen queue.
+            var socialPostIds: Set<UUID> = []
+            if let followedIds = followManager?.followedUsers, !followedIds.isEmpty {
+                let followedArray = followedIds.map(\.uuidString)
+                struct LikeRow: Decodable {
+                    let postId: UUID
+                    enum CodingKeys: String, CodingKey { case postId = "post_id" }
+                }
+                do {
+                    let rows: [LikeRow] = try await supabase
+                        .from("likes")
+                        .select("post_id")
+                        .in("user_id", values: followedArray)
+                        .execute()
+                        .value
+                    socialPostIds = Set(rows.map(\.postId))
+                } catch {
+                    debugLog("Social likes fetch error", error)
+                }
+            }
+
+            // Three-tier sort, chronological desc within each tier.
+            // Top: unseen AND liked by someone you follow.
+            // Middle: unseen.
+            // Bottom: seen (fallback so the feed never goes blank).
+            // Computed at fetch time so ordering stays stable during
+            // the session — pull-to-refresh applies the updated tiers.
             let seen = postViewsManager?.viewedPostIds ?? []
+            func tier(_ post: SupabaseFeedPost) -> Int {
+                if seen.contains(post.id) { return 2 }
+                if socialPostIds.contains(post.id) { return 0 }
+                return 1
+            }
             let ordered = posts.sorted { a, b in
-                let aSeen = seen.contains(a.id)
-                let bSeen = seen.contains(b.id)
-                if aSeen != bSeen { return !aSeen }
+                let ta = tier(a); let tb = tier(b)
+                if ta != tb { return ta < tb }
                 return a.createdAt > b.createdAt
             }
             recommendations = ordered.map { $0.toRecommendation() }
