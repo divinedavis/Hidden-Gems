@@ -20,6 +20,12 @@ class AuthManager {
     var isSignedIn = false
     var currentUser: User = User(name: "", username: "", profileImageURL: "", followersCount: 0, followingCount: 0)
     var errorMessage: String?
+    /// In-memory copy of the avatar image the user most recently
+    /// uploaded. Used by `ProfileView` to render the new picture the
+    /// instant the upload finishes — `AsyncImage` still has to go
+    /// fetch the public URL from the Supabase CDN, which would
+    /// otherwise leave the circle blank for a beat after Save.
+    var localAvatarImage: UIImage?
 
     func clearError() { errorMessage = nil }
 
@@ -194,10 +200,11 @@ class AuthManager {
                 let name: String
                 let username: String
                 let profileImageUrl: String?
+                let bio: String?
                 let followersCount: Int?
                 let followingCount: Int?
                 enum CodingKeys: String, CodingKey {
-                    case id, name, username
+                    case id, name, username, bio
                     case profileImageUrl = "profile_image_url"
                     case followersCount = "followers_count"
                     case followingCount = "following_count"
@@ -217,6 +224,7 @@ class AuthManager {
                     name: row.name,
                     username: row.username,
                     profileImageURL: row.profileImageUrl ?? "",
+                    bio: row.bio ?? "",
                     followersCount: row.followersCount ?? 0,
                     followingCount: row.followingCount ?? 0
                 )
@@ -236,26 +244,56 @@ class AuthManager {
     }
 
     // MARK: Edit Profile
-    /// Uploads a new profile picture to the media bucket and writes
-    /// the public URL back to the users row. Storage RLS allows writes
-    /// only under `avatars/<auth.uid()>/…`, so the path is rooted at
-    /// the current user's id.
-    func updateProfileImage(_ image: UIImage) async throws {
+    /// Persists any subset of editable profile fields. A nil argument
+    /// means "leave this field alone." Storage RLS allows writes only
+    /// under `avatars/<auth.uid()>/…`, so the image path is rooted at
+    /// the current user's id. On success, the just-uploaded UIImage
+    /// is cached in `localAvatarImage` so the profile header can
+    /// render it immediately without waiting for `AsyncImage` to
+    /// round-trip the new URL from the CDN.
+    func updateProfile(image: UIImage? = nil, bio: String? = nil) async throws {
         let authId = currentUser.id
-        let url = try await MediaUploader.uploadJPEG(
-            image,
-            kind: .avatars,
-            ownerId: authId
-        )
-        struct UpdateRow: Encodable { let profile_image_url: String }
-        try await supabase
-            .from("users")
-            .update(UpdateRow(profile_image_url: url))
-            .eq("id", value: authId.uuidString)
-            .execute()
+        var uploadedImageURL: String?
+        if let image {
+            uploadedImageURL = try await MediaUploader.uploadJPEG(
+                image,
+                kind: .avatars,
+                ownerId: authId
+            )
+        }
+        let trimmedBio = bio.map { String($0.prefix(140)) }
+        if let uploadedImageURL, let trimmedBio {
+            struct Both: Encodable { let profile_image_url: String; let bio: String }
+            try await supabase.from("users")
+                .update(Both(profile_image_url: uploadedImageURL, bio: trimmedBio))
+                .eq("id", value: authId.uuidString)
+                .execute()
+        } else if let uploadedImageURL {
+            struct Pic: Encodable { let profile_image_url: String }
+            try await supabase.from("users")
+                .update(Pic(profile_image_url: uploadedImageURL))
+                .eq("id", value: authId.uuidString)
+                .execute()
+        } else if let trimmedBio {
+            struct Bio: Encodable { let bio: String }
+            try await supabase.from("users")
+                .update(Bio(bio: trimmedBio))
+                .eq("id", value: authId.uuidString)
+                .execute()
+        } else {
+            return
+        }
         var user = currentUser
-        user.profileImageURL = url
+        if let uploadedImageURL { user.profileImageURL = uploadedImageURL }
+        if let trimmedBio { user.bio = trimmedBio }
         currentUser = user
+        if let image { localAvatarImage = image }
+    }
+
+    /// Compatibility shim for callers that only want to swap the
+    /// avatar. New code should prefer `updateProfile(image:bio:)`.
+    func updateProfileImage(_ image: UIImage) async throws {
+        try await updateProfile(image: image, bio: nil)
     }
 
     // MARK: Sign Out

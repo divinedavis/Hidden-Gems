@@ -15,6 +15,7 @@ create table if not exists users (
   username text unique not null,
   email text unique not null,
   profile_image_url text,
+  bio text not null default '' check (char_length(bio) <= 140),
   created_at timestamptz default now()
 );
 

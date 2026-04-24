@@ -42,7 +42,17 @@ struct ProfileView: View {
                                     .font(.system(size: 40))
                                     .foregroundStyle(.gray)
                             }
-                        if let url = safeImageURL(from: displayUser.profileImageURL) {
+                        // Prefer the just-uploaded cached UIImage for
+                        // the own-profile case so the circle updates
+                        // the instant Save completes, without waiting
+                        // on AsyncImage to fetch the new URL.
+                        if isOwnProfile, let cached = authManager.localAvatarImage {
+                            Image(uiImage: cached)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 100, height: 100)
+                                .clipShape(Circle())
+                        } else if let url = safeImageURL(from: displayUser.profileImageURL) {
                             AsyncImage(url: url) { phase in
                                 switch phase {
                                 case .success(let image):
@@ -55,15 +65,24 @@ struct ProfileView: View {
                             .clipShape(Circle())
                         }
                     }
-                    
+
                     VStack(spacing: 4) {
                         Text(displayUser.name)
                             .font(.title2)
                             .fontWeight(.bold)
-                        
+
                         Text(displayUser.username)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+
+                        if !displayUser.bio.isEmpty {
+                            Text(displayUser.bio)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 4)
+                                .padding(.horizontal, 32)
+                        }
                     }
                     
                     HStack(spacing: 40) {
@@ -241,72 +260,118 @@ struct ProfileRecommendationCard: View {
     }
 }
 
-/// Lets the signed-in user pick a new profile picture. Uploads the
-/// JPEG to the media bucket and writes the public URL back to their
-/// users row via `AuthManager.updateProfileImage`. Current scope is
-/// avatar-only; name / username edits can slot in later.
+/// Lets the signed-in user pick a new profile picture and write a
+/// short bio. Uploads the avatar JPEG to the media bucket and
+/// persists both fields via `AuthManager.updateProfile`. Bio is
+/// capped at 140 characters; beyond that the counter flips red and
+/// typing is truncated.
 struct EditProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthManager.self) private var authManager
     @State private var pickerItem: PhotosPickerItem?
     @State private var previewImage: UIImage?
+    @State private var bio: String = ""
+    @State private var didSeedBio = false
     @State private var isSaving = false
     @State private var errorMessage: String?
 
+    private let maxBioLength = 140
+
+    private var hasChanges: Bool {
+        previewImage != nil || bio != authManager.currentUser.bio
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                ZStack {
-                    Circle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 140, height: 140)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 54))
-                                .foregroundStyle(.gray)
-                        }
-                    if let previewImage {
-                        Image(uiImage: previewImage)
-                            .resizable()
-                            .scaledToFill()
+            ScrollView {
+                VStack(spacing: 24) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 140, height: 140)
+                            .overlay {
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 54))
+                                    .foregroundStyle(.gray)
+                            }
+                        if let previewImage {
+                            Image(uiImage: previewImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 140, height: 140)
+                                .clipShape(Circle())
+                        } else if let cached = authManager.localAvatarImage {
+                            Image(uiImage: cached)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 140, height: 140)
+                                .clipShape(Circle())
+                        } else if let url = safeImageURL(from: authManager.currentUser.profileImageURL) {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image.resizable().scaledToFill()
+                                default:
+                                    Color.clear
+                                }
+                            }
                             .frame(width: 140, height: 140)
                             .clipShape(Circle())
-                    } else if let url = safeImageURL(from: authManager.currentUser.profileImageURL) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image.resizable().scaledToFill()
-                            default:
-                                Color.clear
-                            }
                         }
-                        .frame(width: 140, height: 140)
-                        .clipShape(Circle())
+                    }
+                    .padding(.top, 12)
+
+                    PhotosPicker(selection: $pickerItem, matching: .images) {
+                        Text(previewImage == nil ? "Choose photo" : "Choose a different photo")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color(.systemGray6))
+                            .clipShape(Capsule())
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Bio")
+                                .font(.headline)
+                            Spacer()
+                            Text("\(bio.count)/\(maxBioLength)")
+                                .font(.caption)
+                                .foregroundStyle(bio.count > maxBioLength ? .red : .secondary)
+                        }
+
+                        TextEditor(text: $bio)
+                            .frame(height: 120)
+                            .padding(8)
+                            .background(Color(.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(bio.count > maxBioLength ? Color.red : Color.clear, lineWidth: 1)
+                            )
+                            .onChange(of: bio) { _, newValue in
+                                if newValue.count > maxBioLength {
+                                    bio = String(newValue.prefix(maxBioLength))
+                                }
+                            }
+
+                        Text("Tell people what you're into. \"I'm a foodie always looking for a chill vibe.\"")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal)
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
                     }
                 }
-                .padding(.top, 12)
-
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Text(previewImage == nil ? "Choose photo" : "Choose a different photo")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color(.systemGray6))
-                        .clipShape(Capsule())
-                }
-
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-
-                Spacer()
+                .padding(.vertical)
             }
-            .padding()
             .navigationTitle("Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -319,8 +384,14 @@ struct EditProfileSheet: View {
                     } else {
                         Button("Save") { save() }
                             .fontWeight(.semibold)
-                            .disabled(previewImage == nil)
+                            .disabled(!hasChanges)
                     }
+                }
+            }
+            .onAppear {
+                if !didSeedBio {
+                    bio = authManager.currentUser.bio
+                    didSeedBio = true
                 }
             }
             .onChange(of: pickerItem) { _, newItem in
@@ -336,17 +407,21 @@ struct EditProfileSheet: View {
     }
 
     private func save() {
-        guard let image = previewImage else { return }
         isSaving = true
         errorMessage = nil
+        let trimmedBio = bio.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bioChanged = trimmedBio != authManager.currentUser.bio
         Task {
             do {
-                try await authManager.updateProfileImage(image)
+                try await authManager.updateProfile(
+                    image: previewImage,
+                    bio: bioChanged ? trimmedBio : nil
+                )
                 isSaving = false
                 dismiss()
             } catch {
                 isSaving = false
-                errorMessage = "Could not save profile picture. \(error.localizedDescription)"
+                errorMessage = "Could not save profile. \(error.localizedDescription)"
             }
         }
     }

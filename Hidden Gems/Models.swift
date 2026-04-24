@@ -67,6 +67,7 @@ struct User: Identifiable, Equatable, Hashable {
     let name: String
     let username: String
     var profileImageURL: String
+    var bio: String = ""
     let followersCount: Int
     let followingCount: Int
 
