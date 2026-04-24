@@ -23,6 +23,7 @@ struct FeedView: View {
     @Environment(LikesManager.self) private var likesManager
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
+    @Environment(PostViewsManager.self) private var postViewsManager
     @Binding var showingCreatePost: Bool
 
     @State private var isTabBarVisible = true
@@ -134,7 +135,8 @@ struct FeedView: View {
     private func refreshFeed() async {
         await recommendationsManager.fetchFeed(
             likesManager: likesManager,
-            commentsManager: commentsManager
+            commentsManager: commentsManager,
+            postViewsManager: postViewsManager
         )
     }
 }
@@ -145,8 +147,20 @@ struct RecommendationCard: View {
     @Environment(LikesManager.self) private var likesManager
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
+    @Environment(PostViewsManager.self) private var postViewsManager
     @State private var showingComments = false
     @State private var showingImageViewer = false
+    @State private var dwellTask: Task<Void, Never>?
+
+    private let dwellThreshold: UInt64 = 2_000_000_000 // 2s
+
+    /// Records this card as seen — either because the user dwelled on
+    /// it in the feed for `dwellThreshold`, or because they engaged
+    /// (tap photo, open comments, like, save, etc.). Seen posts drop
+    /// to the bottom of the next feed refresh.
+    private func markSeen() {
+        postViewsManager.markViewed(recommendation.id, by: authManager.currentUser.id)
+    }
 
     private var shareMessage: String {
         let r = recommendation.restaurant
@@ -195,12 +209,14 @@ struct RecommendationCard: View {
                 .clipped()
                 .contentShape(Rectangle())
                 .onTapGesture {
+                    markSeen()
                     showingImageViewer = true
                 }
                 .gesture(
                     MagnificationGesture()
                         .onEnded { value in
                             if value > 1.05 {
+                                markSeen()
                                 showingImageViewer = true
                             }
                         }
@@ -278,6 +294,7 @@ struct RecommendationCard: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         debugLog("Like tapped", recommendation.restaurant.name)
+                        markSeen()
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                             likesManager.toggleLike(recommendation, by: authManager.currentUser.id)
                         }
@@ -300,6 +317,7 @@ struct RecommendationCard: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         debugLog("Comment tapped", recommendation.restaurant.name)
+                        markSeen()
                         showingComments = true
                     }
 
@@ -323,6 +341,7 @@ struct RecommendationCard: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             debugLog("Save tapped", recommendation.restaurant.name)
+                            markSeen()
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                                 savedManager.toggleSave(
                                     recommendation.restaurant,
@@ -339,6 +358,20 @@ struct RecommendationCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        .onAppear {
+            // Start a dwell timer. If the card stays on screen long
+            // enough, flip it to seen. Cancelled if the user scrolls
+            // past before the threshold.
+            dwellTask = Task {
+                try? await Task.sleep(nanoseconds: dwellThreshold)
+                guard !Task.isCancelled else { return }
+                markSeen()
+            }
+        }
+        .onDisappear {
+            dwellTask?.cancel()
+            dwellTask = nil
+        }
         .sheet(isPresented: $showingComments) {
             CommentsView(recommendation: recommendation)
                 .environment(commentsManager)
@@ -360,6 +393,7 @@ struct TagFeedView: View {
     @Environment(RecommendationsManager.self) private var recommendationsManager
     @Environment(LikesManager.self) private var likesManager
     @Environment(CommentsManager.self) private var commentsManager
+    @Environment(PostViewsManager.self) private var postViewsManager
 
     private var normalized: String { Vibe.normalize(tag) }
 
@@ -399,7 +433,8 @@ struct TagFeedView: View {
             if recommendationsManager.recommendations.isEmpty {
                 await recommendationsManager.fetchFeed(
                     likesManager: likesManager,
-                    commentsManager: commentsManager
+                    commentsManager: commentsManager,
+                    postViewsManager: postViewsManager
                 )
             }
         }

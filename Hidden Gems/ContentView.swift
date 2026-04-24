@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var followManager = FollowManager()
     @State private var commentsManager = CommentsManager()
     @State private var recommendationsManager = RecommendationsManager()
+    @State private var postViewsManager = PostViewsManager()
     @State private var showingCreatePost = false
     
     var body: some View {
@@ -56,12 +57,14 @@ struct ContentView: View {
         .environment(followManager)
         .environment(commentsManager)
         .environment(recommendationsManager)
+        .environment(postViewsManager)
         .task(id: authManager.currentUser.id) {
             guard authManager.isSignedIn else { return }
             let uid = authManager.currentUser.id
             await savedManager.loadSaved(userId: uid)
             await followManager.loadFollowing(userId: uid)
             await likesManager.loadLiked(userId: uid)
+            await postViewsManager.load(userId: uid)
         }
         #if DEBUG
         .task {
@@ -93,6 +96,7 @@ struct ContentView: View {
                 .environment(followManager)
                 .environment(commentsManager)
                 .environment(recommendationsManager)
+                .environment(postViewsManager)
                 .environment(authManager)
         }
     }

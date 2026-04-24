@@ -270,13 +270,74 @@ extension Recommendation {
     
     static let samples = [sample1, sample2, sample3]
 }
+// Tracks which posts the current user has already seen — via dwell
+// in the feed (~2s on screen), tapping into comments / the image
+// viewer, or engaging with the like / save buttons. Seen posts drop
+// to the bottom of the feed so the user sees fresh recommendations
+// first; once the unseen queue is empty, seen posts come back.
+@Observable
+class PostViewsManager {
+    var viewedPostIds: Set<UUID> = []
+
+    func load(userId: UUID) async {
+        struct Row: Decodable {
+            let postId: UUID
+            enum CodingKeys: String, CodingKey { case postId = "post_id" }
+        }
+        do {
+            let rows: [Row] = try await supabase
+                .from("post_views")
+                .select("post_id")
+                .eq("user_id", value: userId.uuidString)
+                .execute()
+                .value
+            viewedPostIds = Set(rows.map(\.postId))
+        } catch {
+            debugLog("Post views fetch error", error)
+        }
+    }
+
+    /// Idempotent — re-marking a post that's already in the set is a
+    /// no-op locally and an upsert server-side (ignore on conflict),
+    /// so the dwell-timer firing alongside an engagement tap doesn't
+    /// generate duplicate writes.
+    func markViewed(_ postId: UUID, by userId: UUID) {
+        guard !viewedPostIds.contains(postId) else { return }
+        viewedPostIds.insert(postId)
+        Task { @MainActor in
+            struct ViewRow: Encodable {
+                let user_id: String
+                let post_id: String
+            }
+            do {
+                try await supabase.from("post_views")
+                    .upsert(
+                        ViewRow(
+                            user_id: userId.uuidString,
+                            post_id: postId.uuidString
+                        ),
+                        onConflict: "user_id,post_id",
+                        ignoreDuplicates: true
+                    )
+                    .execute()
+            } catch {
+                debugLog("Post view insert error", error)
+            }
+        }
+    }
+}
+
 // Observable class to manage the feed recommendations across the app
 @Observable
 class RecommendationsManager {
     var recommendations: [Recommendation] = []
     var isLoading = false
 
-    func fetchFeed(likesManager: LikesManager? = nil, commentsManager: CommentsManager? = nil) async {
+    func fetchFeed(
+        likesManager: LikesManager? = nil,
+        commentsManager: CommentsManager? = nil,
+        postViewsManager: PostViewsManager? = nil
+    ) async {
         isLoading = true
         do {
             let posts: [SupabaseFeedPost] = try await supabase
@@ -285,7 +346,19 @@ class RecommendationsManager {
                 .order("created_at", ascending: false)
                 .execute()
                 .value
-            recommendations = posts.map { $0.toRecommendation() }
+            // Sort unseen first, then seen — chronological desc within
+            // each group. This is computed at fetch time so the
+            // ordering stays stable during the session; cards don't
+            // jump to the bottom the instant dwell marks them as
+            // seen. Next refresh re-sorts with the updated set.
+            let seen = postViewsManager?.viewedPostIds ?? []
+            let ordered = posts.sorted { a, b in
+                let aSeen = seen.contains(a.id)
+                let bSeen = seen.contains(b.id)
+                if aSeen != bSeen { return !aSeen }
+                return a.createdAt > b.createdAt
+            }
+            recommendations = ordered.map { $0.toRecommendation() }
             likesManager?.hydrate(from: posts)
             commentsManager?.hydrateCounts(from: posts)
             if let commentsManager {
