@@ -15,7 +15,15 @@ struct Hidden_GemsApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                if authManager.isSignedIn {
+                if authManager.isRestoring {
+                    // Splash gate. Holds the screen while
+                    // restoreSession() resolves so a cold launch
+                    // doesn't briefly flash LandingView before
+                    // swapping to ContentView for already-signed-in
+                    // users.
+                    Color.black.ignoresSafeArea()
+                    ProgressView().tint(.white)
+                } else if authManager.isSignedIn {
                     ContentView()
                         .onAppear {
                             #if DEBUG

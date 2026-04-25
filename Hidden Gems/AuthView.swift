@@ -18,6 +18,12 @@ private let authLogger = Logger(subsystem: "com.divinedavis.hiddengems", categor
 @Observable
 class AuthManager {
     var isSignedIn = false
+    /// True from cold launch until `restoreSession()` finishes its
+    /// initial fetch from the Supabase keychain. Lets the App scene
+    /// hold a splash while we don't yet know whether the user is
+    /// signed in, instead of flashing LandingView and then swapping
+    /// to ContentView once the session resolves.
+    var isRestoring = true
     var currentUser: User = User(name: "", username: "", profileImageURL: "", followersCount: 0, followingCount: 0)
     var errorMessage: String?
     /// In-memory copy of the avatar image the user most recently
@@ -37,6 +43,7 @@ class AuthManager {
     /// out. A transient RLS or network failure used to force users back
     /// to the sign-in screen on every cold launch.
     func restoreSession() async {
+        defer { isRestoring = false }
         do {
             let session = try await supabase.auth.session
             authLogger.info("restored session for user \(session.user.id, privacy: .public)")
