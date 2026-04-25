@@ -316,6 +316,8 @@ struct RecommendationCard: View {
                             Text("\(count)")
                                 .font(.subheadline)
                                 .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                     }
                     .padding(.vertical, 10)
@@ -339,6 +341,8 @@ struct RecommendationCard: View {
                             Text("\(count)")
                                 .font(.subheadline)
                                 .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                     }
                     .padding(.vertical, 10)
