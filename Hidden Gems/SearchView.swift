@@ -37,10 +37,17 @@ struct SearchView: View {
                 VibeFilterRow(selected: $selectedVibe)
                     .padding(.vertical, 8)
 
-                Group {
+                // Always render the ScrollView so SwiftUI doesn't
+                // have to swap between full-screen-frame branches and
+                // ScrollView branches — that swap was leaving a ghost
+                // frame and pushing content down by hundreds of
+                // points until interaction "unstuck" it. Loading and
+                // empty states render inline as scroll content.
+                ScrollView {
                     if !hasLoadedOnce {
                         ProgressView("Loading restaurants…")
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.top, 80)
+                            .frame(maxWidth: .infinity)
                     } else if filteredRestaurants.isEmpty {
                         ContentUnavailableView(
                             "No matches",
@@ -49,25 +56,17 @@ struct SearchView: View {
                                 ? "Try a different search."
                                 : "No spots tagged with this vibe yet. Be the first to recommend one!")
                         )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 60)
                     } else {
-                        ScrollView {
-                            LazyVStack(spacing: 12) {
-                                ForEach(filteredRestaurants) { item in
-                                    RestaurantRow(restaurant: item.restaurant)
-                                }
+                        LazyVStack(spacing: 12) {
+                            ForEach(filteredRestaurants) { item in
+                                RestaurantRow(restaurant: item.restaurant)
                             }
-                            .padding()
                         }
-                        // .refreshable belongs on the ScrollView so iOS
-                        // anchors the pull-to-refresh control to it.
-                        // Previously it was on the outer VStack, which
-                        // SwiftUI doesn't treat as a scroll container,
-                        // so the indicator latched onto whatever sibling
-                        // it could find — flicking around the screen.
-                        .refreshable { await loadRestaurants() }
+                        .padding()
                     }
                 }
+                .refreshable { await loadRestaurants() }
             }
             .navigationTitle("Search")
             .searchable(text: $searchText, prompt: "Search restaurants, cuisine, or location")
