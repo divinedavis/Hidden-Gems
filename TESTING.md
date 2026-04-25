@@ -46,6 +46,25 @@ seed script.
     top-level and half are replies to the post's own top-level
     comments (so threads look lived-in).
 
+## Variants
+
+The default `scripts/seed_test_data.py` produces a generic
+restaurants-and-posts batch. Other variants live alongside it for
+focused content types — they all follow the same per-post engagement
+contract above:
+
+- `scripts/seed_bars_and_lounges.py` — 30 bars/lounges/cocktail
+  rooms across many cities, plus 100 posts referencing them. Uses
+  bar-themed names, cuisines (Cocktail Bar, Wine Bar, Lounge…),
+  vibe tags (happy hour, cocktail bar, rooftop…), and a separate
+  cocktail/dim-lit photo pool. Top-level comments only — no
+  threaded replies — so the chunked INSERTs never have to satisfy
+  a parent_comment_id FK.
+
+When adding a new variant, copy the bars script as a template and
+keep the same engagement-spec constants (LIKES_MIN/LIKES_MAX,
+COMMENTS_MIN/COMMENTS_MAX, PHOTOS, TAGS).
+
 ## Running the seed
 
 ```bash
