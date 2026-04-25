@@ -11,7 +11,7 @@ import Supabase
 struct SearchView: View {
     @State private var searchText = ""
     @State private var restaurants: [RestaurantWithVibes] = []
-    @State private var isLoading = true
+    @State private var hasLoadedOnce = false
     @State private var selectedVibe: String?
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
@@ -38,7 +38,7 @@ struct SearchView: View {
                     .padding(.vertical, 8)
 
                 Group {
-                    if isLoading && restaurants.isEmpty {
+                    if !hasLoadedOnce {
                         ProgressView("Loading restaurants…")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if filteredRestaurants.isEmpty {
@@ -59,13 +59,24 @@ struct SearchView: View {
                             }
                             .padding()
                         }
+                        // .refreshable belongs on the ScrollView so iOS
+                        // anchors the pull-to-refresh control to it.
+                        // Previously it was on the outer VStack, which
+                        // SwiftUI doesn't treat as a scroll container,
+                        // so the indicator latched onto whatever sibling
+                        // it could find — flicking around the screen.
+                        .refreshable { await loadRestaurants() }
                     }
                 }
             }
             .navigationTitle("Search")
             .searchable(text: $searchText, prompt: "Search restaurants, cuisine, or location")
-            .task { await loadRestaurants() }
-            .refreshable { await loadRestaurants() }
+            // Pin to a stable id so the fetch only fires once per
+            // session, not every time the tab re-appears.
+            .task(id: "search-load") {
+                guard !hasLoadedOnce else { return }
+                await loadRestaurants()
+            }
         }
     }
 
@@ -110,7 +121,7 @@ struct SearchView: View {
         } catch {
             debugLog("SearchView restaurants fetch error", error)
         }
-        isLoading = false
+        hasLoadedOnce = true
     }
 }
 
