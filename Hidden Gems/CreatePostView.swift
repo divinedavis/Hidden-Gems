@@ -41,9 +41,9 @@ struct CreatePostView: View {
                     }
                     // Location Selection
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Restaurant")
+                        Text("Place")
                             .font(.headline)
-                        
+
                         Button {
                             showingLocationPicker = true
                         } label: {
@@ -58,7 +58,7 @@ struct CreatePostView: View {
                                             .foregroundStyle(.secondary)
                                     }
                                 } else {
-                                    Text("Select a restaurant")
+                                    Text("Select a place")
                                         .foregroundStyle(.secondary)
                                 }
                                 
