@@ -150,6 +150,7 @@ struct SafeAsyncImage: View {
 /// post's caption.
 struct RestaurantMetaInfo: View {
     let restaurant: Restaurant
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -164,14 +165,42 @@ struct RestaurantMetaInfo: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 4) {
-                Image(systemName: "mappin.circle.fill")
-                    .font(.caption)
-                Text(restaurant.location)
-                    .font(.caption)
+            Button(action: openInMaps) {
+                HStack(spacing: 4) {
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.caption)
+                    Text(restaurant.location)
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
             }
-            .foregroundStyle(.secondary)
+            .buttonStyle(.plain)
+            .disabled(restaurant.location.isEmpty &&
+                      restaurant.latitude == 0 && restaurant.longitude == 0)
         }
+    }
+
+    /// Opens Apple Maps with the restaurant's address (or coordinates,
+    /// if we have them) prefilled as the directions destination. Saves
+    /// the user retyping the address in Maps.
+    private func openInMaps() {
+        var components = URLComponents(string: "http://maps.apple.com/")!
+        var items: [URLQueryItem] = []
+        // Prefer coordinates when available — addresses sometimes
+        // geocode to the wrong place when the city is generic.
+        if restaurant.latitude != 0 || restaurant.longitude != 0 {
+            items.append(URLQueryItem(name: "daddr",
+                                      value: "\(restaurant.latitude),\(restaurant.longitude)"))
+            items.append(URLQueryItem(name: "q", value: restaurant.name))
+        } else if !restaurant.location.isEmpty {
+            items.append(URLQueryItem(name: "daddr",
+                                      value: "\(restaurant.name), \(restaurant.location)"))
+        } else {
+            return
+        }
+        components.queryItems = items
+        guard let url = components.url else { return }
+        openURL(url)
     }
 
     /// "date night spot" → "DateNightSpot" for chip display. Keep the
