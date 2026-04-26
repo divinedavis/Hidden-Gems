@@ -18,6 +18,13 @@ struct Restaurant: Identifiable {
     let rating: Double
     let priceLevel: Int // 1-4 ($-$$$$)
     let description: String
+    /// Stable identifier from Apple Maps when the place was picked
+    /// from MKLocalSearch. Empty for manually-added places. Used as
+    /// the upsert conflict target so multiple posts about the same
+    /// Apple POI share one `restaurants` row.
+    var applePlaceID: String = ""
+    var latitude: Double = 0
+    var longitude: Double = 0
 }
 
 struct Recommendation: Identifiable {

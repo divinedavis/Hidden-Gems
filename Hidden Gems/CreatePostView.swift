@@ -273,122 +273,255 @@ struct LocationPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var selectedRestaurant: Restaurant?
     @State private var searchText = ""
-    @State private var restaurants: [Restaurant] = []
-    @State private var isLoading = true
+    @State private var completer = ApplePlaceCompleter()
+    @State private var resolving = false
     @State private var showingAddRestaurant = false
-
-    private var filteredRestaurants: [Restaurant] {
-        if searchText.isEmpty { return restaurants }
-        return restaurants.filter { restaurant in
-            restaurant.name.localizedCaseInsensitiveContains(searchText) ||
-            restaurant.location.localizedCaseInsensitiveContains(searchText)
-        }
-    }
+    @State private var resolveError: String?
 
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView("Loading restaurants…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List(filteredRestaurants) { restaurant in
-                        Button {
-                            selectedRestaurant = restaurant
-                            dismiss()
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(restaurant.name)
-                                        .font(.headline)
-                                        .foregroundStyle(.primary)
-                                    Text(restaurant.location)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-
-                                if selectedRestaurant?.id == restaurant.id {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.blue)
+            ZStack {
+                List {
+                    if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Section {
+                            Text("Search Apple Maps for a restaurant, bar, café, or any place.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Section {
+                            ForEach(completer.results, id: \.self) { result in
+                                Button {
+                                    Task { await selectAppleResult(result) }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(result.title)
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+                                        if !result.subtitle.isEmpty {
+                                            Text(result.subtitle)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
                                 }
                             }
+                        } header: {
+                            Text("Suggestions from Apple Maps")
                         }
                     }
+
+                    Section {
+                        Button {
+                            showingAddRestaurant = true
+                        } label: {
+                            Label("Add manually", systemImage: "square.and.pencil")
+                        }
+                    } footer: {
+                        Text("Don't see your spot? Add it by hand.")
+                    }
+                }
+
+                if resolving {
+                    Color.black.opacity(0.15).ignoresSafeArea()
+                    ProgressView("Adding place…")
+                        .padding()
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
-            .navigationTitle("Select Restaurant")
+            .navigationTitle("Select a place")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search restaurants")
+            .searchable(text: $searchText, prompt: "Search places")
+            .onChange(of: searchText) { _, newValue in
+                completer.update(query: newValue)
+            }
+            .alert("Couldn't add that place", isPresented: .constant(resolveError != nil)) {
+                Button("OK") { resolveError = nil }
+            } message: {
+                Text(resolveError ?? "")
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingAddRestaurant = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
             }
             .sheet(isPresented: $showingAddRestaurant) {
                 AddRestaurantView { newRestaurant in
-                    restaurants.append(newRestaurant)
-                    restaurants.sort { $0.name.localizedCompare($1.name) == .orderedAscending }
                     selectedRestaurant = newRestaurant
                     dismiss()
                 }
             }
-            .task { await loadRestaurants() }
         }
     }
 
-    private func loadRestaurants() async {
-        struct RestaurantRow: Decodable {
+    /// Resolves an MKLocalSearchCompletion to a full POI, upserts a
+    /// restaurants row keyed on its Apple identifier, and hands the
+    /// resulting Restaurant back to the parent.
+    private func selectAppleResult(_ completion: MKLocalSearchCompletion) async {
+        resolving = true
+        defer { resolving = false }
+        do {
+            let request = MKLocalSearch.Request(completion: completion)
+            let response = try await MKLocalSearch(request: request).start()
+            guard let item = response.mapItems.first else {
+                resolveError = "Apple Maps couldn't resolve that place. Try another."
+                return
+            }
+            let restaurant = try await upsertApplePlace(item)
+            selectedRestaurant = restaurant
+            dismiss()
+        } catch {
+            resolveError = error.localizedDescription
+        }
+    }
+
+    /// Upserts a `restaurants` row from an Apple `MKMapItem` keyed on
+    /// the Apple place identifier. Returns the resulting Restaurant
+    /// (with the server-assigned UUID).
+    private func upsertApplePlace(_ item: MKMapItem) async throws -> Restaurant {
+        let placemark = item.placemark
+        let lat = placemark.coordinate.latitude
+        let lon = placemark.coordinate.longitude
+
+        // Synthesize a stable id for places that don't expose a
+        // first-party Apple identifier — round coordinates so the
+        // same place searched again hashes the same way.
+        let appleID: String
+        if let id = item.identifier?.rawValue, !id.isEmpty {
+            appleID = id
+        } else {
+            let n = item.name ?? "place"
+            appleID = "syn:\(n.lowercased()):\(String(format: "%.4f,%.4f", lat, lon))"
+        }
+
+        let category = appCategory(for: item)
+        let name = item.name ?? "Unnamed place"
+        let location = formattedAddress(placemark)
+
+        struct UpsertRow: Encodable {
+            let apple_place_id: String
+            let name: String
+            let cuisine: String
+            let location: String
+            let latitude: Double
+            let longitude: Double
+        }
+        struct ReturnedRow: Decodable {
             let id: UUID
             let name: String
             let cuisine: String?
             let location: String?
-            let rating: Double?
             let priceLevel: Int?
+            let rating: Double?
             let imageUrl: String?
-            let description: String?
+            let applePlaceId: String?
+            let latitude: Double?
+            let longitude: Double?
             enum CodingKeys: String, CodingKey {
-                case id, name, cuisine, location, rating, description
+                case id, name, cuisine, location, rating, latitude, longitude
                 case priceLevel = "price_level"
                 case imageUrl = "image_url"
+                case applePlaceId = "apple_place_id"
             }
         }
-        do {
-            let rows: [RestaurantRow] = try await supabase
-                .from("restaurants")
-                .select("id, name, cuisine, location, rating, price_level, image_url, description")
-                .order("name")
-                .execute()
-                .value
-            restaurants = rows.map { row in
-                var r = Restaurant(
-                    name: row.name,
-                    cuisine: row.cuisine ?? "",
-                    location: row.location ?? "",
-                    imageURL: row.imageUrl ?? "",
-                    rating: row.rating ?? 0,
-                    priceLevel: row.priceLevel ?? 1,
-                    description: row.description ?? ""
-                )
-                r.id = row.id
-                return r
-            }
-        } catch {
-            debugLog("LocationPicker restaurants fetch error", error)
+
+        let rows: [ReturnedRow] = try await supabase
+            .from("restaurants")
+            .upsert(
+                UpsertRow(
+                    apple_place_id: appleID,
+                    name: name,
+                    cuisine: category,
+                    location: location,
+                    latitude: lat,
+                    longitude: lon
+                ),
+                onConflict: "apple_place_id",
+                ignoreDuplicates: false
+            )
+            .select("id, name, cuisine, location, rating, price_level, image_url, apple_place_id, latitude, longitude")
+            .execute()
+            .value
+
+        guard let row = rows.first else {
+            throw NSError(domain: "ApplePlaceUpsert", code: -1)
         }
-        isLoading = false
+        var r = Restaurant(
+            name: row.name,
+            cuisine: row.cuisine ?? "",
+            location: row.location ?? "",
+            imageURL: row.imageUrl ?? "",
+            rating: row.rating ?? 0,
+            priceLevel: row.priceLevel ?? 0,
+            description: ""
+        )
+        r.id = row.id
+        r.applePlaceID = row.applePlaceId ?? appleID
+        r.latitude = row.latitude ?? lat
+        r.longitude = row.longitude ?? lon
+        return r
+    }
+
+    private func formattedAddress(_ p: MKPlacemark) -> String {
+        var bits: [String] = []
+        if let s = p.thoroughfare {
+            if let n = p.subThoroughfare { bits.append("\(n) \(s)") } else { bits.append(s) }
+        }
+        let cityState = [p.locality, p.administrativeArea].compactMap { $0 }.joined(separator: ", ")
+        if !cityState.isEmpty { bits.append(cityState) }
+        return bits.joined(separator: ", ")
+    }
+
+    /// Maps Apple's `MKPointOfInterestCategory` onto our category set
+    /// so newly-added places line up with the existing seeded data.
+    private func appCategory(for item: MKMapItem) -> String {
+        switch item.pointOfInterestCategory {
+        case .cafe: return "Cafe"
+        case .bakery: return "Bakery"
+        case .brewery: return "Beer Garden"
+        case .winery: return "Wine Bar"
+        case .nightlife: return "Cocktail Bar"
+        default: return "American"
+        }
+    }
+
+}
+
+// MARK: - Apple Place Completer
+
+/// Drives the Place picker's autocomplete via `MKLocalSearchCompleter`,
+/// scoped to points of interest (vs. addresses). Updates `results` as
+/// the user types and SwiftUI observes via @Observable.
+@Observable
+class ApplePlaceCompleter: NSObject, MKLocalSearchCompleterDelegate {
+    var results: [MKLocalSearchCompletion] = []
+    private let completer = MKLocalSearchCompleter()
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = .pointOfInterest
+    }
+
+    func update(query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        if trimmed.count >= 2 {
+            completer.queryFragment = trimmed
+        } else {
+            results = []
+        }
+    }
+
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        results = Array(completer.results.prefix(20))
+    }
+
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        results = []
     }
 }
 
-// MARK: - Location Completer
+// MARK: - Address Completer (legacy, used by AddRestaurantView)
 
 @Observable
 class LocationCompleterManager: NSObject, MKLocalSearchCompleterDelegate {
