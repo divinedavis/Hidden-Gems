@@ -23,10 +23,29 @@ struct CreatePostView: View {
     @State private var postErrorMessage: String?
     @State private var vibeTags: [String] = []
     @State private var tagInput = ""
+    /// Category the poster wants this place tagged as. Prefills from
+    /// the selected place's stored cuisine; if the user changes it
+    /// before posting, the place row gets updated alongside the post
+    /// so future posts about the same spot see the curated value.
+    @State private var category: String = ""
 
     private let maxPhotos = 5
     private let maxCaptionLength = 124
     private let maxTags = 6
+    private let categories = [
+        "American", "New American", "Californian",
+        "Italian", "Mexican", "Chinese", "Japanese",
+        "Korean", "Thai", "Indian", "Vietnamese",
+        "Mediterranean", "French", "Greek", "Spanish",
+        "Middle Eastern", "Ethiopian", "Brazilian", "Peruvian",
+        "Caribbean", "Soul Food", "Southern", "BBQ",
+        "Seafood", "Steakhouse", "Pizza", "Burger",
+        "Cocktail Bar", "Wine Bar", "Whiskey Bar", "Champagne Bar",
+        "Beer Garden", "Sports Bar", "Dive Bar", "Tiki Bar",
+        "Rooftop Bar", "Speakeasy", "Lounge",
+        "Cafe", "Bakery", "Dessert",
+        "Other"
+    ]
     
     var body: some View {
         NavigationStack {
@@ -73,7 +92,37 @@ struct CreatePostView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                     }
-                    
+
+                    // Category — appears as soon as a place is picked.
+                    // Defaults to whatever Apple Maps tagged the place
+                    // as; the user can correct it before posting.
+                    if selectedRestaurant != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Category")
+                                .font(.headline)
+
+                            Menu {
+                                Picker("Category", selection: $category) {
+                                    ForEach(categories, id: \.self) { c in
+                                        Text(c).tag(c)
+                                    }
+                                }
+                            } label: {
+                                HStack {
+                                    Text(category.isEmpty ? "Select a category" : category)
+                                        .foregroundStyle(category.isEmpty ? .secondary : .primary)
+                                    Spacer()
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                    }
+
                     // Photo Selection
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -205,6 +254,13 @@ struct CreatePostView: View {
                     await loadImages()
                 }
             }
+            .onChange(of: selectedRestaurant?.id) { _, _ in
+                // When a new place is picked, prefill Category from
+                // its stored cuisine. User can override before posting.
+                if let r = selectedRestaurant, !r.cuisine.isEmpty {
+                    category = r.cuisine
+                }
+            }
         }
     }
     
@@ -231,8 +287,40 @@ struct CreatePostView: View {
                     )
                     uploadedURLs.append(url)
                 }
+
+                // Persist the category override back to the place
+                // row when the user picked something different from
+                // what was stored, so future posts about the same
+                // spot see the curated value.
+                let trimmedCategory = category.trimmingCharacters(in: .whitespaces)
+                let restaurantToUse: Restaurant
+                if !trimmedCategory.isEmpty, trimmedCategory != restaurant.cuisine {
+                    struct CuisineUpdate: Encodable { let cuisine: String }
+                    try? await supabase
+                        .from("restaurants")
+                        .update(CuisineUpdate(cuisine: trimmedCategory))
+                        .eq("id", value: restaurant.id.uuidString)
+                        .execute()
+                    var updated = Restaurant(
+                        name: restaurant.name,
+                        cuisine: trimmedCategory,
+                        location: restaurant.location,
+                        imageURL: restaurant.imageURL,
+                        rating: restaurant.rating,
+                        priceLevel: restaurant.priceLevel,
+                        description: restaurant.description
+                    )
+                    updated.id = restaurant.id
+                    updated.applePlaceID = restaurant.applePlaceID
+                    updated.latitude = restaurant.latitude
+                    updated.longitude = restaurant.longitude
+                    restaurantToUse = updated
+                } else {
+                    restaurantToUse = restaurant
+                }
+
                 try await recommendationsManager.createPost(
-                    restaurant: restaurant,
+                    restaurant: restaurantToUse,
                     note: caption,
                     user: authManager.currentUser,
                     vibeTags: vibeTags,
