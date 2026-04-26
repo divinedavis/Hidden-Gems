@@ -436,11 +436,26 @@ struct AddRestaurantView: View {
 
     enum Field { case name, location }
 
+    // Category list — covers food cuisines, bars, and lounges so any
+    // place type the seed data can produce is also user-pickable.
+    // Sectioned for readability inside the picker; the value stored
+    // on the row is the plain string.
     private let cuisines = [
-        "American", "Mexican", "Italian", "Chinese", "Japanese",
-        "Korean", "Thai", "Indian", "Mediterranean", "French",
-        "Vietnamese", "Caribbean", "Soul Food", "Greek", "Spanish",
-        "Middle Eastern", "Ethiopian", "Brazilian", "Peruvian", "Other"
+        // Food
+        "American", "New American", "Californian",
+        "Italian", "Mexican", "Chinese", "Japanese",
+        "Korean", "Thai", "Indian", "Vietnamese",
+        "Mediterranean", "French", "Greek", "Spanish",
+        "Middle Eastern", "Ethiopian", "Brazilian", "Peruvian",
+        "Caribbean", "Soul Food", "Southern", "BBQ",
+        "Seafood", "Steakhouse", "Pizza", "Burger",
+        // Drinks / nightlife
+        "Cocktail Bar", "Wine Bar", "Whiskey Bar", "Champagne Bar",
+        "Beer Garden", "Sports Bar", "Dive Bar", "Tiki Bar",
+        "Rooftop Bar", "Speakeasy", "Lounge",
+        // Coffee / cafes
+        "Cafe", "Bakery", "Dessert",
+        "Other"
     ]
 
     private var canSave: Bool {
@@ -464,8 +479,8 @@ struct AddRestaurantView: View {
                         .submitLabel(.next)
                         .onSubmit { focusedField = .location }
 
-                    Picker("Cuisine", selection: $selectedCuisine) {
-                        Text("Select a cuisine").tag("")
+                    Picker("Category", selection: $selectedCuisine) {
+                        Text("Select a category").tag("")
                         ForEach(cuisines, id: \.self) { cuisine in
                             Text(cuisine).tag(cuisine)
                         }
