@@ -13,8 +13,20 @@ alter table restaurants add column if not exists apple_place_id text;
 alter table restaurants add column if not exists latitude double precision;
 alter table restaurants add column if not exists longitude double precision;
 
--- Partial unique index — enforces uniqueness only when the column
--- is populated, so multiple manually-added rows can coexist.
-create unique index if not exists restaurants_apple_place_id_key
-  on restaurants (apple_place_id)
-  where apple_place_id is not null;
+-- Real UNIQUE constraint (not a partial index) so PostgREST's
+-- ON CONFLICT (apple_place_id) upsert can match it. Postgres treats
+-- NULLs as distinct in unique constraints, so multiple manually-added
+-- rows with null apple_place_id still coexist.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'restaurants_apple_place_id_key'
+      and conrelid = 'restaurants'::regclass
+  ) then
+    -- drop the older partial index if it's still around
+    execute 'drop index if exists restaurants_apple_place_id_key';
+    alter table restaurants
+      add constraint restaurants_apple_place_id_key unique (apple_place_id);
+  end if;
+end $$;
