@@ -359,12 +359,14 @@ struct CreatePostView: View {
 
 struct LocationPickerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AuthManager.self) private var authManager
     @Binding var selectedRestaurant: Restaurant?
     @State private var searchText = ""
     @State private var completer = ApplePlaceCompleter()
     @State private var resolving = false
     @State private var showingAddRestaurant = false
     @State private var resolveError: String?
+    @State private var recents: [Restaurant] = []
 
     var body: some View {
         NavigationStack {
@@ -408,6 +410,34 @@ struct LocationPickerView: View {
                     } footer: {
                         Text("Don't see your spot? Add it by hand.")
                     }
+
+                    // The user's three most-recent places, shown when no
+                    // search query is active. Lets repeat-posters skip the
+                    // search step for spots they hit often.
+                    if searchText.trimmingCharacters(in: .whitespaces).isEmpty,
+                       !recents.isEmpty {
+                        Section {
+                            ForEach(recents) { r in
+                                Button {
+                                    selectedRestaurant = r
+                                    dismiss()
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(r.name)
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+                                        if !r.location.isEmpty {
+                                            Text(r.location)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        } header: {
+                            Text("Recent")
+                        }
+                    }
                 }
 
                 if resolving {
@@ -439,6 +469,78 @@ struct LocationPickerView: View {
                     dismiss()
                 }
             }
+            .task {
+                await loadRecents()
+            }
+        }
+    }
+
+    /// Pulls the user's three most-recently-used restaurants from posts.
+    /// Dedupes by restaurant id so revisited spots don't crowd the list.
+    private func loadRecents() async {
+        guard authManager.isSignedIn else { return }
+        let uid = authManager.currentUser.id.uuidString
+        struct PostRow: Decodable {
+            let createdAt: Date
+            let restaurant: RecentRestaurant?
+            enum CodingKeys: String, CodingKey {
+                case createdAt = "created_at"
+                case restaurant = "restaurants"
+            }
+        }
+        struct RecentRestaurant: Decodable {
+            let id: UUID
+            let name: String
+            let cuisine: String?
+            let location: String?
+            let priceLevel: Int?
+            let rating: Double?
+            let imageUrl: String?
+            let applePlaceId: String?
+            let latitude: Double?
+            let longitude: Double?
+            enum CodingKeys: String, CodingKey {
+                case id, name, cuisine, location, rating, latitude, longitude
+                case priceLevel = "price_level"
+                case imageUrl = "image_url"
+                case applePlaceId = "apple_place_id"
+            }
+        }
+        do {
+            // Pull a small window of recent posts and dedupe by restaurant
+            // client-side — PostgREST doesn't support DISTINCT ON.
+            let rows: [PostRow] = try await supabase
+                .from("posts")
+                .select("created_at, restaurants(id, name, cuisine, location, rating, price_level, image_url, apple_place_id, latitude, longitude)")
+                .eq("user_id", value: uid)
+                .order("created_at", ascending: false)
+                .limit(30)
+                .execute()
+                .value
+            var seen: Set<UUID> = []
+            var collected: [Restaurant] = []
+            for row in rows {
+                guard let r = row.restaurant, !seen.contains(r.id) else { continue }
+                seen.insert(r.id)
+                var restaurant = Restaurant(
+                    name: r.name,
+                    cuisine: r.cuisine ?? "",
+                    location: r.location ?? "",
+                    imageURL: r.imageUrl ?? "",
+                    rating: r.rating ?? 0,
+                    priceLevel: r.priceLevel ?? 0,
+                    description: "",
+                    applePlaceID: r.applePlaceId ?? "",
+                    latitude: r.latitude ?? 0,
+                    longitude: r.longitude ?? 0
+                )
+                restaurant.id = r.id
+                collected.append(restaurant)
+                if collected.count == 3 { break }
+            }
+            recents = collected
+        } catch {
+            debugLog("Recent places fetch error", error)
         }
     }
 

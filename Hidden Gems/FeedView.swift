@@ -90,9 +90,13 @@ struct FeedView: View {
                 // won the race it would sort against empty sets
                 // (surfacing seen posts at the top, and not elevating
                 // posts liked by users you follow).
+                // Loaded likes feed into the seen-set so historical likes
+                // drop to the bottom tier — without this, the user's prior
+                // likes resurface at the top on cold-launch.
                 async let views: Void = postViewsManager.load(userId: uid)
                 async let follows: Void = followManager.loadFollowing(userId: uid)
-                _ = await (views, follows)
+                async let likes: Void = likesManager.loadLiked(userId: uid)
+                _ = await (views, follows, likes)
                 await refreshFeed()
             }
             .navigationTitle("Hidden Gems")

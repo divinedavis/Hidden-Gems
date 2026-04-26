@@ -374,7 +374,13 @@ class RecommendationsManager {
             // .in() filter on a large followed-user set was tanking
             // the feed load. Re-add once we have a dedicated endpoint
             // that returns just the post-id set.
-            let seen = postViewsManager?.viewedPostIds ?? []
+            // A liked post counts as seen — once you've engaged with it
+            // we don't want it back in the unseen queue. Covers historical
+            // likes that pre-date the post_views table too.
+            var seen = postViewsManager?.viewedPostIds ?? []
+            if let liked = likesManager?.likedRecommendations {
+                seen.formUnion(liked)
+            }
             let socialPostIds: Set<UUID> = []
             _ = followManager // silence unused-parameter warning
             func tier(_ post: SupabaseFeedPost) -> Int {
@@ -389,14 +395,11 @@ class RecommendationsManager {
             }
             recommendations = ordered.map { $0.toRecommendation() }
             likesManager?.hydrate(from: posts)
+            // Just hydrate the counts off the feed view — actual comment
+            // bodies are fetched lazily per-post when a user opens the
+            // sheet. Pulling every comment row up front got unworkable
+            // once the seeded test data crossed ~50k comments.
             commentsManager?.hydrateCounts(from: posts)
-            if let commentsManager {
-                // Detach comments hydration so the feed (and its tap
-                // handlers) become interactive the moment the posts
-                // query returns, instead of waiting on a full-table
-                // comments scan.
-                Task { await commentsManager.fetchAllComments() }
-            }
         } catch {
             debugLog("Feed fetch error", error)
         }
@@ -674,48 +677,75 @@ class CommentsManager {
     }
 
     func fetchAllComments() async {
+        // Kept for tests / batch refresh — production paths fetch one post at
+        // a time via `fetchComments(for:)` to avoid pulling the entire
+        // comments table every time a sheet opens.
         do {
-            // Disambiguate the `users` embedding via its FK — `comment_likes`
-            // also references `users`, so without `!comments_user_id_fkey`
-            // PostgREST returns PGRST201 ambiguity.
             let rows: [SupabaseComment] = try await supabase
                 .from("comments")
                 .select("id, post_id, user_id, text, created_at, parent_comment_id, users!comments_user_id_fkey(name, username, profile_image_url), comment_likes(user_id)")
                 .order("created_at", ascending: false)
                 .execute()
                 .value
-            var grouped: [UUID: [Comment]] = [:]
-            var likesMap: [UUID: Set<UUID>] = [:]
-            for row in rows {
-                var user = User(
-                    name: row.users.name,
-                    username: row.users.username,
-                    profileImageURL: row.users.profileImageUrl ?? "",
-                    followersCount: 0,
-                    followingCount: 0
-                )
-                user.id = row.userId
-                let likers = Set((row.commentLikes ?? []).map(\.userId))
-                var comment = Comment(
-                    user: user,
-                    text: row.text,
-                    date: row.createdAt,
-                    likeCount: likers.count
-                )
-                comment.id = row.id
-                comment.parentCommentId = row.parentCommentId
-                grouped[row.postId, default: []].append(comment)
-                if !likers.isEmpty {
-                    likesMap[comment.id] = likers
-                }
-            }
-            comments = grouped
-            commentLikes = likesMap
-            for (postId, list) in grouped {
-                serverCommentCounts[postId] = max(serverCommentCounts[postId, default: 0], list.count)
-            }
+            mergeComments(rows: rows, replacePostIds: Set(rows.map(\.postId)))
         } catch {
             debugLog("Comments fetch error", "\(error.localizedDescription) | \(error)")
+        }
+    }
+
+    /// Loads comments for a single post. Merges into the existing in-memory
+    /// dictionary so previously-fetched posts stay cached.
+    func fetchComments(for postId: UUID) async {
+        do {
+            let rows: [SupabaseComment] = try await supabase
+                .from("comments")
+                .select("id, post_id, user_id, text, created_at, parent_comment_id, users!comments_user_id_fkey(name, username, profile_image_url), comment_likes(user_id)")
+                .eq("post_id", value: postId.uuidString)
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+            mergeComments(rows: rows, replacePostIds: [postId])
+        } catch {
+            debugLog("Comments fetch error", "\(error.localizedDescription) | \(error)")
+        }
+    }
+
+    private func mergeComments(rows: [SupabaseComment], replacePostIds: Set<UUID>) {
+        // Wipe slates for the posts we just refetched so we don't leave
+        // stale comments around (e.g. one was deleted server-side).
+        for postId in replacePostIds {
+            comments[postId] = []
+        }
+        var likesPatch: [UUID: Set<UUID>] = [:]
+        for row in rows {
+            var user = User(
+                name: row.users.name,
+                username: row.users.username,
+                profileImageURL: row.users.profileImageUrl ?? "",
+                followersCount: 0,
+                followingCount: 0
+            )
+            user.id = row.userId
+            let likers = Set((row.commentLikes ?? []).map(\.userId))
+            var comment = Comment(
+                user: user,
+                text: row.text,
+                date: row.createdAt,
+                likeCount: likers.count
+            )
+            comment.id = row.id
+            comment.parentCommentId = row.parentCommentId
+            comments[row.postId, default: []].append(comment)
+            if !likers.isEmpty {
+                likesPatch[comment.id] = likers
+            }
+        }
+        for (commentId, likers) in likesPatch {
+            commentLikes[commentId] = likers
+        }
+        for postId in replacePostIds {
+            let count = comments[postId]?.count ?? 0
+            serverCommentCounts[postId] = max(serverCommentCounts[postId, default: 0], count)
         }
     }
 

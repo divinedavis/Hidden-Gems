@@ -26,8 +26,8 @@ struct CommentsView: View {
 
     var body: some View {
         mainContent
-            .task {
-                await commentsManager.fetchAllComments()
+            .task(id: recommendation.id) {
+                await commentsManager.fetchComments(for: recommendation.id)
             }
     }
 
