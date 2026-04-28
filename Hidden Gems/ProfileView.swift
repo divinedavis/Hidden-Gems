@@ -14,6 +14,7 @@ struct ProfileView: View {
     @State private var myRecommendations: [Recommendation] = []
     @State private var showingSettings = false
     @State private var showingEditProfile = false
+    @State private var showingCreatePost = false
     @State private var liveFollowersCount: Int?
     @State private var liveFollowingCount: Int?
     @State private var wasFollowingAtLoad: Bool = false
@@ -22,6 +23,8 @@ struct ProfileView: View {
     @Environment(FollowManager.self) private var followManager
     @Environment(AuthManager.self) private var authManager
     @Environment(RecommendationsManager.self) private var recommendationsManager
+    @Environment(CommentsManager.self) private var commentsManager
+    @Environment(PostViewsManager.self) private var postViewsManager
 
     private var displayUser: User {
         user ?? authManager.currentUser
@@ -175,7 +178,7 @@ struct ProfileView: View {
                             
                             if isOwnProfile {
                                 Button {
-                                    // Add recommendation action
+                                    showingCreatePost = true
                                 } label: {
                                     Text("Add Your First Recommendation")
                                         .font(.subheadline)
@@ -228,6 +231,16 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showingEditProfile) {
             EditProfileSheet()
+                .environment(authManager)
+        }
+        .sheet(isPresented: $showingCreatePost) {
+            CreatePostView()
+                .environment(savedManager)
+                .environment(likesManager)
+                .environment(followManager)
+                .environment(commentsManager)
+                .environment(recommendationsManager)
+                .environment(postViewsManager)
                 .environment(authManager)
         }
         .task(id: displayUser.id) {

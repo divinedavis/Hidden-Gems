@@ -10,26 +10,32 @@ import SwiftUI
 struct SavedView: View {
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
-    
+    @Environment(AuthManager.self) private var authManager
+
     var body: some View {
         NavigationStack {
             Group {
                 if savedManager.savedRestaurants.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "bookmark")
-                            .font(.system(size: 60))
-                            .foregroundStyle(.secondary)
-                        
-                        Text("No Saved Places")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        Text("Bookmark restaurants to save them here")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            Image(systemName: "bookmark")
+                                .font(.system(size: 60))
+                                .foregroundStyle(.secondary)
+
+                            Text("No Saved Places")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+
+                            Text("Bookmark restaurants to save them here")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 80)
+                        .padding()
                     }
-                    .padding()
+                    .refreshable { await reload() }
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 12) {
@@ -39,10 +45,19 @@ struct SavedView: View {
                         }
                         .padding()
                     }
+                    .refreshable { await reload() }
                 }
             }
             .navigationTitle("Saved")
+            .task(id: authManager.currentUser.id) {
+                await reload()
+            }
         }
+    }
+
+    private func reload() async {
+        guard authManager.isSignedIn else { return }
+        await savedManager.loadSaved(userId: authManager.currentUser.id)
     }
 }
 
