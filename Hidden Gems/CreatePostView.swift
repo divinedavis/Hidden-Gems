@@ -14,6 +14,7 @@ struct CreatePostView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(RecommendationsManager.self) private var recommendationsManager
     @Environment(AuthManager.self) private var authManager
+    @Environment(RatingsManager.self) private var ratingsManager
     @State private var selectedRestaurant: Restaurant?
     @State private var caption = ""
     @State private var selectedPhotos: [PhotosPickerItem] = []
@@ -28,6 +29,14 @@ struct CreatePostView: View {
     /// before posting, the place row gets updated alongside the post
     /// so future posts about the same spot see the curated value.
     @State private var category: String = ""
+    /// 1-5 stars. 0 means unset (the form treats it as required).
+    /// Prefills from the user's most recent post for the selected
+    /// place so a re-post acts like an edit of their last rating.
+    @State private var rating: Int = 0
+    /// The rating from the user's previous post for this place, or
+    /// nil if they've never posted it. Surfaced as helper text under
+    /// the star row to make the prefill explicit.
+    @State private var previousRating: Int? = nil
 
     private let maxPhotos = 5
     private let maxCaptionLength = 124
@@ -119,6 +128,30 @@ struct CreatePostView: View {
                                 .padding()
                                 .background(Color(.systemGray6))
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                    }
+
+                    // Rating — gated on a place being picked, like Category.
+                    if selectedRestaurant != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Rating")
+                                .font(.headline)
+
+                            HStack(spacing: 8) {
+                                ForEach(1...5, id: \.self) { i in
+                                    Image(systemName: i <= rating ? "star.fill" : "star")
+                                        .font(.title2)
+                                        .foregroundStyle(i <= rating ? Color.yellow : Color.secondary)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { rating = (rating == i) ? 0 : i }
+                                }
+                            }
+
+                            if let previousRating {
+                                Text("Your last rating: \(String(repeating: "★", count: previousRating)) — tap to update")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -260,12 +293,24 @@ struct CreatePostView: View {
                 if let r = selectedRestaurant, !r.cuisine.isEmpty {
                     category = r.cuisine
                 }
+                // Prefill the rating from the user's existing rating
+                // for this place — re-rating from the form acts like
+                // an edit of the value they last set.
+                if let r = selectedRestaurant,
+                   let existing = ratingsManager.rating(for: r.id) {
+                    rating = existing
+                    previousRating = existing
+                } else {
+                    rating = 0
+                    previousRating = nil
+                }
             }
         }
     }
     
     private var canPost: Bool {
-        selectedRestaurant != nil && !caption.isEmpty && caption.count <= maxCaptionLength
+        selectedRestaurant != nil && rating >= 1
+            && !caption.isEmpty && caption.count <= maxCaptionLength
     }
     
     private func createPost() {
@@ -326,6 +371,15 @@ struct CreatePostView: View {
                     vibeTags: vibeTags,
                     imageUrls: uploadedURLs
                 )
+                // Persist the star rating to the ratings table so the
+                // feed card and future re-rate flow see this value.
+                if rating >= 1 {
+                    ratingsManager.setRating(
+                        rating,
+                        for: restaurantToUse.id,
+                        by: authManager.currentUser.id
+                    )
+                }
                 isPosting = false
                 dismiss()
             } catch {

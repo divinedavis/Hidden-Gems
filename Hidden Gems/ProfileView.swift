@@ -25,6 +25,7 @@ struct ProfileView: View {
     @Environment(RecommendationsManager.self) private var recommendationsManager
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(PostViewsManager.self) private var postViewsManager
+    @Environment(RatingsManager.self) private var ratingsManager
 
     private var displayUser: User {
         user ?? authManager.currentUser
@@ -241,6 +242,7 @@ struct ProfileView: View {
                 .environment(commentsManager)
                 .environment(recommendationsManager)
                 .environment(postViewsManager)
+                .environment(ratingsManager)
                 .environment(authManager)
         }
         .task(id: displayUser.id) {

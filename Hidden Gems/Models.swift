@@ -942,6 +942,71 @@ class CommentsManager {
     }
 }
 
+// Observable class to manage the session user's per-restaurant
+// star ratings. Backed by the `ratings` table (composite PK on
+// user_id/restaurant_id) so each user has at most one rating per
+// place. Edits from the feed card and the New Recommendation form
+// both write through here.
+@Observable
+class RatingsManager {
+    /// Map of restaurant id → the session user's rating (1-5).
+    /// Restaurants the user hasn't rated are absent from the dict.
+    var ratings: [UUID: Int] = [:]
+
+    func rating(for restaurantId: UUID) -> Int? { ratings[restaurantId] }
+
+    func loadRatings(userId: UUID) async {
+        struct RatingRow: Decodable {
+            let restaurantId: UUID
+            let rating: Int
+            enum CodingKeys: String, CodingKey {
+                case rating
+                case restaurantId = "restaurant_id"
+            }
+        }
+        do {
+            let rows: [RatingRow] = try await supabase
+                .from("ratings")
+                .select("restaurant_id, rating")
+                .eq("user_id", value: userId.uuidString)
+                .execute()
+                .value
+            ratings = Dictionary(uniqueKeysWithValues: rows.map { ($0.restaurantId, $0.rating) })
+        } catch {
+            debugLog("Ratings fetch error", error)
+        }
+    }
+
+    /// Optimistically updates the local cache and upserts to Supabase.
+    /// Reverts on failure. The ON CONFLICT path keeps a re-rating from
+    /// tripping the composite PK.
+    func setRating(_ value: Int, for restaurantId: UUID, by userId: UUID) {
+        let previous = ratings[restaurantId]
+        ratings[restaurantId] = value
+        struct RatingRow: Encodable {
+            let user_id: String
+            let restaurant_id: String
+            let rating: Int
+        }
+        let row = RatingRow(
+            user_id: userId.uuidString,
+            restaurant_id: restaurantId.uuidString,
+            rating: value
+        )
+        Task { @MainActor in
+            do {
+                try await supabase
+                    .from("ratings")
+                    .upsert(row, onConflict: "user_id,restaurant_id")
+                    .execute()
+            } catch {
+                debugLog("Rating upsert error", error)
+                self.ratings[restaurantId] = previous
+            }
+        }
+    }
+}
+
 // Observable class to manage follows across the app. Hydrates the
 // set of users the session user follows from `follows` on sign-in
 // and persists toggles back to Supabase (previously toggles never
