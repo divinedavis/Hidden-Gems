@@ -43,6 +43,7 @@ struct SearchView: View {
             }
             .refreshable { await loadRestaurants() }
             .navigationTitle("Search")
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search places")
             .task(id: "search-load") {
                 guard !hasLoadedOnce else { return }
