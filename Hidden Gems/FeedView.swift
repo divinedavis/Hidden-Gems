@@ -138,6 +138,18 @@ struct FeedView: View {
             .background(Color(.systemGroupedBackground))
         }
         .toolbar(isTabBarVisible ? .visible : .hidden, for: .tabBar)
+        .alert(
+            "Bookmark failed",
+            isPresented: Binding(
+                get: { savedManager.lastError != nil },
+                set: { if !$0 { savedManager.lastError = nil } }
+            ),
+            presenting: savedManager.lastError
+        ) { _ in
+            Button("OK", role: .cancel) { savedManager.lastError = nil }
+        } message: { msg in
+            Text(msg)
+        }
         #if DEBUG
         .sheet(item: $debugCommentsRec) { rec in
             CommentsView(recommendation: rec)

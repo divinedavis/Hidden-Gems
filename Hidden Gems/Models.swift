@@ -480,6 +480,10 @@ class RecommendationsManager {
 @Observable
 class SavedRestaurantsManager {
     var savedRestaurants: [Restaurant] = []
+    /// Set when a toggle's network round-trip fails. Surfaced to the
+    /// user as a banner so silent RLS / FK / network errors stop
+    /// looking like a no-op bookmark tap.
+    var lastError: String?
 
     func isSaved(_ restaurant: Restaurant) -> Bool {
         savedRestaurants.contains { $0.id == restaurant.id }
@@ -553,15 +557,23 @@ class SavedRestaurantsManager {
                         let user_id: String
                         let restaurant_id: String
                     }
+                    // Upsert (not insert) so a stale local state that
+                    // already had the row server-side doesn't fail the
+                    // composite-PK INSERT and revert the optimistic add.
                     try await supabase.from("saved_restaurants")
-                        .insert(SaveRow(
-                            user_id: userId.uuidString,
-                            restaurant_id: restaurantId.uuidString
-                        ))
+                        .upsert(
+                            SaveRow(
+                                user_id: userId.uuidString,
+                                restaurant_id: restaurantId.uuidString
+                            ),
+                            onConflict: "user_id,restaurant_id"
+                        )
                         .execute()
                 }
+                lastError = nil
             } catch {
                 debugLog("Save toggle error", error)
+                lastError = friendlyMessage(for: error, action: wasSaved ? "remove" : "save")
                 if wasSaved {
                     self.savedRestaurants.append(restaurant)
                 } else {
@@ -569,6 +581,20 @@ class SavedRestaurantsManager {
                 }
             }
         }
+    }
+
+    private func friendlyMessage(for error: Error, action: String) -> String {
+        let raw = String(describing: error)
+        if raw.contains("row-level security") || raw.contains("42501") {
+            return "Couldn't \(action) — auth check failed. Try signing out and back in."
+        }
+        if raw.contains("foreign key") || raw.contains("23503") {
+            return "Couldn't \(action) — restaurant not found on server."
+        }
+        if raw.contains("network") || raw.contains("offline") || raw.contains("connection") {
+            return "Couldn't \(action) — no internet."
+        }
+        return "Couldn't \(action) bookmark. \(error.localizedDescription)"
     }
 }
 
