@@ -172,10 +172,8 @@ struct RecommendationCard: View {
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
     @Environment(PostViewsManager.self) private var postViewsManager
-    @Environment(RatingsManager.self) private var ratingsManager
     @Environment(\.openURL) private var openURL
     @State private var showingComments = false
-    @State private var showingRatingSheet = false
     @State private var dwellTask: Task<Void, Never>?
 
     private let dwellThreshold: UInt64 = 2_000_000_000 // 2s
@@ -309,10 +307,8 @@ struct RecommendationCard: View {
 
                     Spacer(minLength: 6)
 
-                    UserRatingBadge(restaurant: recommendation.restaurant) {
-                        showingRatingSheet = true
-                    }
-                    .fixedSize()
+                    RatingBadge(rating: recommendation.restaurant.rating, font: .subheadline)
+                        .fixedSize()
                 }
 
                 Text(recommendation.restaurant.location)
@@ -441,120 +437,6 @@ struct RecommendationCard: View {
             CommentsView(recommendation: recommendation)
                 .environment(commentsManager)
                 .environment(authManager)
-        }
-        .sheet(isPresented: $showingRatingSheet) {
-            RatingSheet(restaurant: recommendation.restaurant)
-                .environment(ratingsManager)
-                .environment(authManager)
-                .presentationDetents([.height(260)])
-        }
-    }
-}
-
-/// Compact dual-rating badge shown on each feed card. Big purple star
-/// + number is the session user's rating; small yellow star + number
-/// next to it is the community aggregate. Tapping anywhere on the
-/// badge opens the rating sheet so the user can rate or re-rate
-/// without leaving the feed.
-struct UserRatingBadge: View {
-    let restaurant: Restaurant
-    let onTap: () -> Void
-
-    @Environment(RatingsManager.self) private var ratingsManager
-
-    private var userRating: Int? { ratingsManager.rating(for: restaurant.id) }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            HStack(spacing: 2) {
-                Image(systemName: userRating != nil ? "star.fill" : "star")
-                    .font(.subheadline)
-                    .foregroundStyle(userRating != nil ? Color.purple : Color.secondary)
-                if let userRating {
-                    Text("\(userRating)")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                } else {
-                    Text("Rate")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if restaurant.rating > 0 {
-                HStack(spacing: 2) {
-                    Image(systemName: "star.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.yellow)
-                    Text(String(format: "%.1f", restaurant.rating))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { onTap() }
-    }
-}
-
-/// Bottom sheet for setting/changing the session user's rating for
-/// a restaurant. Tapping the same star twice clears the rating;
-/// otherwise the chosen value is upserted to `ratings` immediately
-/// so the feed badge updates without waiting for the sheet to close.
-struct RatingSheet: View {
-    let restaurant: Restaurant
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(RatingsManager.self) private var ratingsManager
-    @Environment(AuthManager.self) private var authManager
-
-    @State private var draft: Int = 0
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Text(restaurant.name)
-                .font(.headline)
-                .lineLimit(1)
-                .padding(.top, 24)
-
-            Text(draft == 0 ? "Tap a star to rate" : "Your rating")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 12) {
-                ForEach(1...5, id: \.self) { i in
-                    Image(systemName: i <= draft ? "star.fill" : "star")
-                        .font(.title)
-                        .foregroundStyle(i <= draft ? Color.purple : Color.secondary)
-                        .contentShape(Rectangle())
-                        .onTapGesture { draft = (draft == i) ? 0 : i }
-                }
-            }
-
-            Button {
-                if draft >= 1 {
-                    ratingsManager.setRating(
-                        draft,
-                        for: restaurant.id,
-                        by: authManager.currentUser.id
-                    )
-                }
-                dismiss()
-            } label: {
-                Text(draft == 0 ? "Cancel" : "Save")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(draft == 0 ? Color(.systemGray5) : Color.purple)
-                    .foregroundStyle(draft == 0 ? Color.primary : Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 16)
-        }
-        .onAppear {
-            draft = ratingsManager.rating(for: restaurant.id) ?? 0
         }
     }
 }
