@@ -8,16 +8,6 @@
 import SwiftUI
 import Supabase
 
-/// Emits the current vertical scroll offset of the feed's content in
-/// the "feedScroll" coordinate space so the tab bar can hide on
-/// downward scrolls and reappear on upward scrolls.
-private struct FeedScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 struct FeedView: View {
     @Environment(RecommendationsManager.self) private var recommendationsManager
     @Environment(SavedRestaurantsManager.self) private var savedManager
@@ -44,26 +34,21 @@ struct FeedView: View {
                     }
                 }
                 .padding(.horizontal)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: FeedScrollOffsetKey.self,
-                            value: proxy.frame(in: .named("feedScroll")).minY
-                        )
-                    }
-                )
             }
-            .coordinateSpace(name: "feedScroll")
-            .onPreferenceChange(FeedScrollOffsetKey.self) { newY in
-                let delta = newY - lastScrollY
-                // Threshold prevents jitter from tiny movements.
-                // Delta < 0 means content scrolled up (user scrolling down) → hide.
-                // Delta > 0 means content scrolled down (user scrolling up) → show.
-                if delta < -6, isTabBarVisible, newY < -20 {
+            // Hide the tab bar on downward scrolls past the top, show it
+            // again on upward scrolls. Using onScrollGeometryChange (iOS
+            // 18+) instead of a GeometryReader+preference because the
+            // preference path was firing inconsistently and the tab bar
+            // would stay stuck visible.
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                geo.contentOffset.y
+            } action: { oldY, newY in
+                let delta = newY - oldY
+                if delta > 6, isTabBarVisible, newY > 20 {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         isTabBarVisible = false
                     }
-                } else if delta > 6, !isTabBarVisible {
+                } else if delta < -6, !isTabBarVisible {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         isTabBarVisible = true
                     }
