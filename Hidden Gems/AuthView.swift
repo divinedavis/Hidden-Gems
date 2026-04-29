@@ -241,15 +241,67 @@ class AuthManager {
                 user.id = row.id
                 currentUser = user
                 isSignedIn = true
+            } else {
+                // Trigger should have inserted on sign-up, but at least
+                // one Apple private-relay user landed without a public
+                // row, which made every FK-bound write (saves, follows,
+                // comments) silently fail. Self-heal by upserting a
+                // minimal row keyed on auth.uid() — RLS allows it.
+                await ensureProfileRow(authId: authId)
             }
-            // If the row is missing we leave isSignedIn alone. The trigger
-            // creates it on sign-up so an empty result here is a transient
-            // fetch issue, not a brand-new user.
         } catch {
             authLogger.error("profile fetch failed: \(String(describing: error), privacy: .public)")
             if !isSignedIn {
                 errorMessage = "Could not load profile. Please try again."
             }
+        }
+    }
+
+    /// Idempotently inserts a public.users row for the current auth
+    /// user, then re-runs loadProfile. Used as a self-heal when the
+    /// on_auth_user_created trigger didn't (or couldn't) populate the
+    /// row at sign-up time. RLS allows the insert because we set
+    /// `id = auth.uid()`.
+    private func ensureProfileRow(authId: UUID) async {
+        struct InsertRow: Encodable {
+            let id: String
+            let name: String
+            let username: String
+            let email: String
+            let bio: String
+        }
+        let email = (try? await supabase.auth.session.user.email) ?? ""
+        let usernameSeed = "user_" + authId.uuidString
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "")
+            .prefix(12)
+        let row = InsertRow(
+            id: authId.uuidString,
+            name: "",
+            username: String(usernameSeed),
+            email: email,
+            bio: ""
+        )
+        do {
+            try await supabase
+                .from("users")
+                .upsert(row, onConflict: "id", ignoreDuplicates: true)
+                .execute()
+            authLogger.info("self-healed missing profile row for \(authId, privacy: .public)")
+            // Now that the row exists, mark the user signed in even if
+            // the live user_profiles fetch never returned anything.
+            var user = User(
+                name: "",
+                username: String(usernameSeed),
+                profileImageURL: "",
+                followersCount: 0,
+                followingCount: 0
+            )
+            user.id = authId
+            currentUser = user
+            isSignedIn = true
+        } catch {
+            authLogger.error("profile self-heal failed: \(String(describing: error), privacy: .public)")
         }
     }
 

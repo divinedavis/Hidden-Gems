@@ -589,7 +589,11 @@ class SavedRestaurantsManager {
             return "Couldn't \(action) — auth check failed. Try signing out and back in."
         }
         if raw.contains("foreign key") || raw.contains("23503") {
-            return "Couldn't \(action) — restaurant not found on server."
+            // saved_restaurants has FKs on both user_id and restaurant_id;
+            // by far the more common cause is a missing public.users row
+            // for an Apple sign-in tester whose profile-row trigger
+            // didn't fire. Sign out / back in self-heals.
+            return "Couldn't \(action) — profile not synced. Sign out and back in to fix."
         }
         if raw.contains("network") || raw.contains("offline") || raw.contains("connection") {
             return "Couldn't \(action) — no internet."
