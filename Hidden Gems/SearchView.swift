@@ -13,8 +13,17 @@ struct SearchView: View {
     @State private var restaurants: [RestaurantWithVibes] = []
     @State private var hasLoadedOnce = false
     @State private var selectedVibe: String?
+    @State private var followsFeed: [Restaurant] = []
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
+    @Environment(FollowManager.self) private var followManager
+    @Environment(AuthManager.self) private var authManager
+
+    /// True when the user is actively narrowing — flips the layout
+    /// from the curated carousel home to the flat filtered list.
+    private var isFiltering: Bool {
+        !searchText.isEmpty || selectedVibe != nil
+    }
 
     var filteredRestaurants: [RestaurantWithVibes] {
         var items = restaurants
@@ -37,46 +46,83 @@ struct SearchView: View {
                 VibeFilterRow(selected: $selectedVibe)
                     .padding(.vertical, 8)
 
-                // Always render the ScrollView so SwiftUI doesn't
-                // have to swap between full-screen-frame branches and
-                // ScrollView branches — that swap was leaving a ghost
-                // frame and pushing content down by hundreds of
-                // points until interaction "unstuck" it. Loading and
-                // empty states render inline as scroll content.
                 ScrollView {
                     if !hasLoadedOnce {
                         ProgressView("Loading restaurants…")
                             .padding(.top, 80)
                             .frame(maxWidth: .infinity)
-                    } else if filteredRestaurants.isEmpty {
-                        ContentUnavailableView(
-                            "No matches",
-                            systemImage: "magnifyingglass",
-                            description: Text(selectedVibe == nil
-                                ? "Try a different search."
-                                : "No spots tagged with this vibe yet. Be the first to recommend one!")
-                        )
-                        .padding(.top, 60)
+                    } else if isFiltering {
+                        filteredList
                     } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(filteredRestaurants) { item in
-                                RestaurantRow(restaurant: item.restaurant)
-                            }
-                        }
-                        .padding()
+                        carouselHome
                     }
                 }
-                .refreshable { await loadRestaurants() }
+                .refreshable { await loadAll() }
             }
             .navigationTitle("Search")
             .searchable(text: $searchText, prompt: "Search restaurants, cuisine, or location")
-            // Pin to a stable id so the fetch only fires once per
-            // session, not every time the tab re-appears.
             .task(id: "search-load") {
                 guard !hasLoadedOnce else { return }
-                await loadRestaurants()
+                await loadAll()
             }
         }
+    }
+
+    /// Flat filtered list, used when the user is searching or has
+    /// tapped a vibe chip. Same shape as before so a known-good search
+    /// flow doesn't regress while we add the curated home above it.
+    @ViewBuilder
+    private var filteredList: some View {
+        if filteredRestaurants.isEmpty {
+            ContentUnavailableView(
+                "No matches",
+                systemImage: "magnifyingglass",
+                description: Text(selectedVibe == nil
+                    ? "Try a different search."
+                    : "No spots tagged with this vibe yet. Be the first to recommend one!")
+            )
+            .padding(.top, 60)
+        } else {
+            LazyVStack(spacing: 12) {
+                ForEach(filteredRestaurants) { item in
+                    RestaurantRow(restaurant: item.restaurant)
+                }
+            }
+            .padding()
+        }
+    }
+
+    /// Airbnb-style stack of horizontal carousels: one for posts from
+    /// people you follow, then one per curated vibe. Sections with no
+    /// data hide themselves so the home doesn't render empty rails.
+    @ViewBuilder
+    private var carouselHome: some View {
+        LazyVStack(alignment: .leading, spacing: 24) {
+            if !followsFeed.isEmpty {
+                CarouselSection(
+                    title: "From people you follow",
+                    restaurants: followsFeed
+                )
+            }
+            ForEach(Vibe.curated, id: \.self) { vibe in
+                let key = Vibe.normalize(vibe)
+                let matches = restaurants
+                    .filter { $0.vibeTags.contains(key) }
+                    .prefix(12)
+                    .map(\.restaurant)
+                if !matches.isEmpty {
+                    CarouselSection(title: vibe, restaurants: Array(matches))
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func loadAll() async {
+        async let r: Void = loadRestaurants()
+        async let f: Void = loadFollowsFeed()
+        _ = await (r, f)
+        hasLoadedOnce = true
     }
 
     private func loadRestaurants() async {
@@ -120,7 +166,39 @@ struct SearchView: View {
         } catch {
             debugLog("SearchView restaurants fetch error", error)
         }
-        hasLoadedOnce = true
+    }
+
+    /// Pulls the most recent posts from people the session user
+    /// follows and dedupes to a list of restaurants. Skips when the
+    /// user follows nobody so we don't render an empty rail.
+    private func loadFollowsFeed() async {
+        let following = Array(followManager.followedUsers).map(\.uuidString)
+        guard !following.isEmpty else {
+            followsFeed = []
+            return
+        }
+        do {
+            let posts: [SupabaseFeedPost] = try await supabase
+                .from("feed")
+                .select()
+                .in("user_id", values: following)
+                .order("created_at", ascending: false)
+                .limit(40)
+                .execute()
+                .value
+            var seen = Set<UUID>()
+            var picked: [Restaurant] = []
+            for post in posts {
+                guard !seen.contains(post.restaurantId) else { continue }
+                seen.insert(post.restaurantId)
+                let rec = post.toRecommendation()
+                picked.append(rec.restaurant)
+                if picked.count >= 12 { break }
+            }
+            followsFeed = picked
+        } catch {
+            debugLog("SearchView follows feed fetch error", error)
+        }
     }
 }
 
@@ -154,9 +232,110 @@ struct VibeFilterRow: View {
     }
 }
 
+/// One titled rail of horizontally-scrolling restaurant cards.
+struct CarouselSection: View {
+    let title: String
+    let restaurants: [Restaurant]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .padding(.horizontal)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(restaurants) { restaurant in
+                        RestaurantCard(restaurant: restaurant)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+}
+
+/// Square-image card used inside `CarouselSection`. Sized so two
+/// cards fit comfortably across an iPhone width with a peek of the
+/// next one — the visual cue that the rail scrolls.
+struct RestaurantCard: View {
+    let restaurant: Restaurant
+
+    private let cardWidth: CGFloat = 180
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let url = URL(string: restaurant.imageURL), !restaurant.imageURL.isEmpty {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().scaledToFill()
+                            default:
+                                placeholder
+                            }
+                        }
+                    } else {
+                        placeholder
+                    }
+                }
+                .frame(width: cardWidth, height: cardWidth)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                if restaurant.rating > 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                        Text(String(format: "%.1f", restaurant.rating))
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(8)
+                }
+            }
+
+            Text(restaurant.name)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+
+            Text(metaLine)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(width: cardWidth, alignment: .leading)
+    }
+
+    private var metaLine: String {
+        var parts: [String] = []
+        if !restaurant.cuisine.isEmpty { parts.append(restaurant.cuisine) }
+        if restaurant.priceLevel > 0 {
+            parts.append(String(repeating: "$", count: restaurant.priceLevel))
+        }
+        if !restaurant.location.isEmpty { parts.append(restaurant.location) }
+        return parts.joined(separator: " · ")
+    }
+
+    private var placeholder: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .overlay {
+                Image(systemName: "photo")
+                    .foregroundStyle(.gray)
+            }
+    }
+}
+
 struct RestaurantRow: View {
     let restaurant: Restaurant
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Restaurant image
@@ -167,7 +346,7 @@ struct RestaurantRow: View {
                     Image(systemName: "photo")
                         .foregroundStyle(.gray)
                 }
-            
+
             // Restaurant info
             VStack(alignment: .leading, spacing: 4) {
                 Text(restaurant.name)
@@ -177,9 +356,9 @@ struct RestaurantRow: View {
 
                 RatingBadge(rating: restaurant.rating)
             }
-            
+
             Spacer()
-            
+
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
