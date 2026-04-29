@@ -166,13 +166,9 @@ struct RestaurantMetaInfo: View {
             }
 
             Button(action: openInMaps) {
-                HStack(spacing: 4) {
-                    Image(systemName: "mappin.circle.fill")
-                        .font(.caption)
-                    Text(restaurant.location)
-                        .font(.caption)
-                }
-                .foregroundStyle(.secondary)
+                Text(restaurant.location)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .disabled(restaurant.location.isEmpty &&
