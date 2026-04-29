@@ -364,7 +364,6 @@ struct LocationPickerView: View {
     @State private var searchText = ""
     @State private var completer = ApplePlaceCompleter()
     @State private var resolving = false
-    @State private var showingAddRestaurant = false
     @State private var resolveError: String?
     @State private var recents: [Restaurant] = []
 
@@ -399,16 +398,6 @@ struct LocationPickerView: View {
                         } header: {
                             Text("Suggestions from Apple Maps")
                         }
-                    }
-
-                    Section {
-                        Button {
-                            showingAddRestaurant = true
-                        } label: {
-                            Label("Add manually", systemImage: "square.and.pencil")
-                        }
-                    } footer: {
-                        Text("Don't see your spot? Add it by hand.")
                     }
 
                     // The user's three most-recent places, shown when no
@@ -461,12 +450,6 @@ struct LocationPickerView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-            }
-            .sheet(isPresented: $showingAddRestaurant) {
-                AddRestaurantView { newRestaurant in
-                    selectedRestaurant = newRestaurant
-                    dismiss()
                 }
             }
             .task {
@@ -711,222 +694,6 @@ class ApplePlaceCompleter: NSObject, MKLocalSearchCompleterDelegate {
     }
 }
 
-// MARK: - Address Completer (legacy, used by AddRestaurantView)
-
-@Observable
-class LocationCompleterManager: NSObject, MKLocalSearchCompleterDelegate {
-    var suggestions: [MKLocalSearchCompletion] = []
-    private let completer = MKLocalSearchCompleter()
-
-    override init() {
-        super.init()
-        completer.delegate = self
-        completer.resultTypes = .address
-    }
-
-    func update(query: String) {
-        if query.count >= 3 {
-            completer.queryFragment = query
-        } else {
-            suggestions = []
-        }
-    }
-
-    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        suggestions = Array(completer.results.prefix(5))
-    }
-
-    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
-        suggestions = []
-    }
-}
-
-// MARK: - Add Restaurant View
-
-struct AddRestaurantView: View {
-    @Environment(\.dismiss) private var dismiss
-    var onAdd: (Restaurant) -> Void
-
-    @State private var name = ""
-    @State private var selectedCuisine = ""
-    @State private var location = ""
-    @State private var priceLevel: Int = 2
-    @State private var isSaving = false
-    @State private var errorMessage: String?
-    @State private var locationCompleter = LocationCompleterManager()
-    @State private var showSuggestions = true
-    @FocusState private var focusedField: Field?
-
-    enum Field { case name, location }
-
-    // Category list — covers food cuisines, bars, and lounges so any
-    // place type the seed data can produce is also user-pickable.
-    // Sectioned for readability inside the picker; the value stored
-    // on the row is the plain string.
-    private let cuisines = [
-        // Food
-        "American", "New American", "Californian",
-        "Italian", "Mexican", "Chinese", "Japanese",
-        "Korean", "Thai", "Indian", "Vietnamese",
-        "Mediterranean", "French", "Greek", "Spanish",
-        "Middle Eastern", "Ethiopian", "Brazilian", "Peruvian",
-        "Caribbean", "Soul Food", "Southern", "BBQ",
-        "Seafood", "Steakhouse", "Pizza", "Burger",
-        // Drinks / nightlife
-        "Cocktail Bar", "Wine Bar", "Whiskey Bar", "Champagne Bar",
-        "Beer Garden", "Sports Bar", "Dive Bar", "Tiki Bar",
-        "Rooftop Bar", "Speakeasy", "Lounge",
-        // Coffee / cafes
-        "Cafe", "Bakery", "Dessert",
-        "Other"
-    ]
-
-    private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !selectedCuisine.isEmpty &&
-        !location.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.red)
-                }
-
-                Section {
-                    TextField("Restaurant name", text: $name)
-                        .focused($focusedField, equals: .name)
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .location }
-
-                    Picker("Category", selection: $selectedCuisine) {
-                        Text("Select a category").tag("")
-                        ForEach(cuisines, id: \.self) { cuisine in
-                            Text(cuisine).tag(cuisine)
-                        }
-                    }
-
-                    Picker("Price", selection: $priceLevel) {
-                        ForEach(1...4, id: \.self) { level in
-                            Text(String(repeating: "$", count: level)).tag(level)
-                        }
-                    }
-
-                    TextField("Location (e.g. 123 Main St, Brooklyn)", text: $location)
-                        .focused($focusedField, equals: .location)
-                        .submitLabel(.done)
-                        .onSubmit { if canSave { save() } }
-                        .onChange(of: location) { _, newValue in
-                            showSuggestions = true
-                            locationCompleter.update(query: newValue)
-                        }
-                }
-
-                if showSuggestions && !locationCompleter.suggestions.isEmpty {
-                    Section {
-                        ForEach(locationCompleter.suggestions, id: \.self) { suggestion in
-                            Button {
-                                let subtitle = suggestion.subtitle
-                                location = subtitle.isEmpty ? suggestion.title : "\(suggestion.title), \(subtitle)"
-                                showSuggestions = false
-                                locationCompleter.suggestions = []
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(suggestion.title)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.primary)
-                                    if !suggestion.subtitle.isEmpty {
-                                        Text(suggestion.subtitle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Add Restaurant")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    if isSaving {
-                        ProgressView()
-                    } else {
-                        Button("Add") { save() }
-                            .fontWeight(.semibold)
-                            .disabled(!canSave)
-                    }
-                }
-            }
-            .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    focusedField = .name
-                }
-            }
-        }
-    }
-
-    private func save() {
-        isSaving = true
-        errorMessage = nil
-        Task {
-            do {
-                struct InsertRow: Encodable {
-                    let name: String
-                    let cuisine: String
-                    let location: String
-                    let price_level: Int
-                }
-                struct ReturnedRow: Decodable {
-                    let id: UUID
-                    let name: String
-                    let cuisine: String?
-                    let location: String?
-                    let priceLevel: Int?
-                    enum CodingKeys: String, CodingKey {
-                        case id, name, cuisine, location
-                        case priceLevel = "price_level"
-                    }
-                }
-                let rows: [ReturnedRow] = try await supabase
-                    .from("restaurants")
-                    .insert(InsertRow(
-                        name: name.trimmingCharacters(in: .whitespaces),
-                        cuisine: selectedCuisine,
-                        location: location.trimmingCharacters(in: .whitespaces),
-                        price_level: priceLevel
-                    ))
-                    .select("id, name, cuisine, location, price_level")
-                    .execute()
-                    .value
-
-                if let row = rows.first {
-                    var r = Restaurant(
-                        name: row.name,
-                        cuisine: row.cuisine ?? "",
-                        location: row.location ?? "",
-                        imageURL: "",
-                        rating: 0,
-                        priceLevel: row.priceLevel ?? priceLevel,
-                        description: ""
-                    )
-                    r.id = row.id
-                    onAdd(r)
-                }
-            } catch {
-                errorMessage = "Could not add restaurant. \(error.localizedDescription)"
-                isSaving = false
-            }
-        }
-    }
-}
 
 #Preview {
     CreatePostView()
