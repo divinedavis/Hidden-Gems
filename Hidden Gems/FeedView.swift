@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Supabase
 
 /// Emits the current vertical scroll offset of the feed's content in
 /// the "feedScroll" coordinate space so the tab bar can hide on
@@ -186,6 +187,7 @@ struct RecommendationCard: View {
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
     @Environment(PostViewsManager.self) private var postViewsManager
+    @Environment(\.openURL) private var openURL
     @State private var showingComments = false
     @State private var dwellTask: Task<Void, Never>?
 
@@ -197,6 +199,26 @@ struct RecommendationCard: View {
     /// to the bottom of the next feed refresh.
     private func markSeen() {
         postViewsManager.markViewed(recommendation.id, by: authManager.currentUser.id)
+    }
+
+    /// Opens Apple Maps with the restaurant prefilled as the directions
+    /// destination. Prefers stored coordinates over a string address
+    /// since generic city names sometimes geocode to the wrong place.
+    fileprivate func openInMaps(_ restaurant: Restaurant) {
+        var components = URLComponents(string: "http://maps.apple.com/")!
+        var items: [URLQueryItem] = []
+        if restaurant.latitude != 0 || restaurant.longitude != 0 {
+            items.append(URLQueryItem(name: "daddr",
+                                      value: "\(restaurant.latitude),\(restaurant.longitude)"))
+            items.append(URLQueryItem(name: "q", value: restaurant.name))
+        } else if !restaurant.location.isEmpty {
+            items.append(URLQueryItem(name: "daddr",
+                                      value: "\(restaurant.name), \(restaurant.location)"))
+        } else {
+            return
+        }
+        components.queryItems = items
+        if let url = components.url { openURL(url) }
     }
 
     /// The photos to show in the card, in order. Prefers the post's
@@ -274,9 +296,16 @@ struct RecommendationCard: View {
 
             // Restaurant info
             VStack(alignment: .leading, spacing: 4) {
-                Text(recommendation.restaurant.name)
-                    .font(.title3)
-                    .fontWeight(.bold)
+                NavigationLink {
+                    RestaurantDetailView(restaurant: recommendation.restaurant)
+                } label: {
+                    Text(recommendation.restaurant.name)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
 
                 // Meta row: cuisine • $$$ ............... ★ rating
                 HStack(spacing: 6) {
@@ -297,13 +326,11 @@ struct RecommendationCard: View {
                         .fixedSize()
                 }
 
-                HStack(spacing: 4) {
-                    Image(systemName: "mappin.circle.fill")
-                        .font(.caption)
-                    Text(recommendation.restaurant.location)
-                        .font(.caption)
-                }
-                .foregroundStyle(.secondary)
+                Text(recommendation.restaurant.location)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                    .onTapGesture { openInMaps(recommendation.restaurant) }
 
                 // Vibe tags — horizontally scrollable strip sitting
                 // between the location row and the caption.
@@ -485,6 +512,97 @@ struct TagFeedView: View {
                     followManager: followManager
                 )
             }
+        }
+    }
+}
+
+/// Pushed when a user taps a restaurant name on a feed card. Lists
+/// every post for that restaurant, with a Top / Recent toggle. Hits
+/// the `feed` view directly (not the in-memory recommendations) so
+/// the user sees every historical post, not just what's loaded into
+/// the home feed's 200-row window.
+struct RestaurantDetailView: View {
+    let restaurant: Restaurant
+
+    @State private var posts: [Recommendation] = []
+    @State private var sortMode: SortMode = .top
+    @State private var isLoading = true
+
+    @Environment(LikesManager.self) private var likesManager
+    @Environment(CommentsManager.self) private var commentsManager
+
+    enum SortMode: String, CaseIterable, Identifiable {
+        case top = "Top"
+        case recent = "Recent"
+        var id: String { rawValue }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Sort", selection: $sortMode) {
+                    ForEach(SortMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                } else if posts.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "fork.knife")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.secondary)
+                        Text("No posts for this spot yet")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 80)
+                } else {
+                    LazyVStack(spacing: 0) {
+                        ForEach(posts) { rec in
+                            RecommendationCard(recommendation: rec)
+                                .padding(.bottom, 12)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(restaurant.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: sortMode) { await load() }
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        // Sort by like_count for "top" (strongest engagement signal —
+        // PostgREST can't order by a computed expression so summing
+        // likes + comments would need a server-side view) and by
+        // created_at for "recent."
+        let orderColumn: String = sortMode == .top ? "like_count" : "created_at"
+        do {
+            let rows: [SupabaseFeedPost] = try await supabase
+                .from("feed")
+                .select()
+                .eq("restaurant_id", value: restaurant.id.uuidString)
+                .order(orderColumn, ascending: false)
+                .limit(100)
+                .execute()
+                .value
+            posts = rows.map { $0.toRecommendation() }
+            likesManager.hydrate(from: rows)
+            commentsManager.hydrateCounts(from: rows)
+        } catch {
+            debugLog("RestaurantDetailView fetch error", error)
         }
     }
 }
