@@ -15,33 +15,19 @@ struct CommentsView: View {
     @State private var newCommentText = ""
     @State private var replyingTo: Comment? = nil
     @State private var expandedReplies: Set<UUID> = []
-    // Frozen at open — keeps the like-sorted order stable mid-read so a
-    // tapped heart doesn't yank the comment to the top under the user's finger.
-    // Reset on re-presentation: SwiftUI rebuilds the view, this @State goes empty.
-    @State private var orderedCommentIds: [UUID] = []
 
     private var currentUser: User { authManager.currentUser }
     @FocusState private var commentFieldFocused: Bool
     @State private var keyboardHeight: CGFloat = 0
 
     private var topLevelComments: [Comment] {
-        let current = commentsManager.getTopLevelComments(for: recommendation)
-        let byId = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
-        var ordered = orderedCommentIds.compactMap { byId[$0] }
-        let known = Set(orderedCommentIds)
-        ordered.append(contentsOf: current.filter { !known.contains($0.id) })
-        return ordered
+        commentsManager.getTopLevelComments(for: recommendation)
     }
 
     var body: some View {
         mainContent
             .task(id: recommendation.id) {
                 await commentsManager.fetchComments(for: recommendation.id)
-                if orderedCommentIds.isEmpty {
-                    orderedCommentIds = commentsManager
-                        .getTopLevelComments(for: recommendation)
-                        .map(\.id)
-                }
             }
     }
 
