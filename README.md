@@ -28,14 +28,15 @@ Most food discovery apps optimize for the loudest crowds. Hidden Gems optimizes 
 
 ## Features
 
-- **Feed** — A reverse-chronological feed of recommendations from people you follow. Like, comment, save, and share.
-- **Search** — Find spots by name, cuisine, location, or vibe tags (`#DateNightSpots`, `#LowkeyVibes`, `#QuickLunch`).
-- **Saved** — A single-tap bookmark for every place you want to try. Unsaves are instant and optimistic.
+- **Feed** — A reverse-chronological feed of recommendations from people you follow. Like, comment, save, share. Tap a post's restaurant name to open the full posting history for that spot (Top / Recent toggle); tap the address to open directions in Apple Maps. Tab bar auto-hides on scroll-down and reappears on scroll-up.
+- **Search** — Airbnb-style home stacked with one horizontal rail per curated vibe (`Date Night Spots`, `Quick Lunch`, `Late Night Eats`, `Lowkey Vibes`, `Good for Solo Dining`). Type in the field at any time to flip to a flat name/cuisine/location filter.
+- **Saved** — A single-tap bookmark for every place you want to try. Unsaves are instant and optimistic; the tab pulls fresh state on appear and supports pull-to-refresh.
 - **Profile** — Your grid of recommendations, your followers, and your following. Tap any user anywhere to open theirs.
-- **Comments** — Threaded comments on every post, with per-comment likes.
+- **Comments** — Threaded comments on every post, with per-comment likes. Order is frozen on open so liking a comment doesn't yank it to the top mid-read; reopen the sheet to re-sort.
 - **Follow / Unfollow** — Build out your trusted taste graph; your feed fills up as you do.
-- **Create** — Drop a new recommendation in seconds: restaurant, up to 5 photos, caption, vibe tags.
-- **Sign in with Apple** — Native, nonce-verified, zero-friction onboarding.
+- **Create** — Drop a new recommendation in seconds: place picker (Apple Maps only), category override, 1–5 star rating, up to 5 photos, caption, vibe tags. Re-posting a place prefills the rating from your last one — the form acts like an edit of your previous take.
+- **Star ratings** — Each user has at most one rating per restaurant, stored in the `ratings` table keyed on `(user_id, restaurant_id)`. Set when posting; the feed card shows the community aggregate.
+- **Sign in with Apple** — Native, nonce-verified, zero-friction onboarding. `loadProfile` self-heals a missing `public.users` row on sign-in so a user whose `on_auth_user_created` trigger didn't fire isn't stranded with FK-violating writes.
 
 ## Tech Stack
 
@@ -100,7 +101,20 @@ After every change, ask: *does this change introduce anything a future reader wo
 
 Trivia like bug fixes and UI tweaks don't need a README entry — the commit message covers them.
 
-### 3. TestFlight
+### 3. Migrations
+
+Schema lives in `schema.sql` (full snapshot) with incremental files under `migrations/` numbered `NNN_description.sql`. To apply a new migration to the hosted Supabase project, run it via the management API:
+
+```sh
+curl -s -X POST "https://api.supabase.com/v1/projects/<project-ref>/database/query" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"query\": $(jq -Rs . < migrations/010_ratings.sql)}"
+```
+
+`SUPABASE_ACCESS_TOKEN` auto-exports from the macOS keychain (service `supabase-pat-clockin`). Migrations are forward-only; rolling back means writing the inverse as the next file.
+
+### 4. TestFlight
 
 ```sh
 ./scripts/ship.sh
@@ -119,7 +133,7 @@ After an icon or marketing-surface change, also attach the new build to the App 
 python3 scripts/attach_latest_build.py
 ```
 
-A task is only complete once both the git push **and** the TestFlight upload succeed.
+A task is only complete once both the git push **and** the TestFlight upload succeed (and the doc review under §2 has been done — even if the answer is "nothing to add").
 
 ## Sign in with Apple
 
