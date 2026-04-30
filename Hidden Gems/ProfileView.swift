@@ -464,7 +464,7 @@ struct EditProfileSheet: View {
                                 }
                             }
 
-                        Text("@\(authManager.currentUser.username) · username can't be changed")
+                        Text("\(authManager.currentUser.username) · username can't be changed")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
