@@ -344,25 +344,6 @@ struct RatingBadge: View {
     }
 }
 
-/// Five-star row showing the poster's exact 1-5 rating (filled vs.
-/// outlined). Used on the feed card so each post displays the
-/// poster's own stars instead of the restaurant-level aggregate
-/// (which is what `RatingBadge` is for).
-struct UserRatingStars: View {
-    let rating: Int
-    var font: Font = .subheadline
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(1...5, id: \.self) { i in
-                Image(systemName: i <= rating ? "star.fill" : "star")
-                    .font(font)
-                    .foregroundStyle(.yellow)
-            }
-        }
-    }
-}
-
 /// Instagram-style vibe tag picker. Curated vibes appear as suggestion
 /// chips; the user can also type their own and press return/space/comma
 /// to add a free-form tag. Tags are stored lowercased for consistent

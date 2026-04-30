@@ -307,17 +307,16 @@ struct RecommendationCard: View {
 
                     Spacer(minLength: 6)
 
-                    // Show the poster's own stars when available (the
-                    // create form requires a rating going forward), and
-                    // fall back to the community aggregate for legacy
-                    // posts that predate the requirement.
-                    if let userRating = recommendation.userRating {
-                        UserRatingStars(rating: userRating, font: .subheadline)
-                            .fixedSize()
-                    } else {
-                        RatingBadge(rating: recommendation.restaurant.rating, font: .subheadline)
-                            .fixedSize()
-                    }
+                    // Prefer the poster's own rating (each post requires
+                    // one going forward) and fall back to the community
+                    // aggregate for legacy posts that predate the
+                    // requirement. Same "★ N.0" badge in either case.
+                    RatingBadge(
+                        rating: recommendation.userRating.map(Double.init)
+                            ?? recommendation.restaurant.rating,
+                        font: .subheadline
+                    )
+                    .fixedSize()
                 }
 
                 Text(recommendation.restaurant.location)
