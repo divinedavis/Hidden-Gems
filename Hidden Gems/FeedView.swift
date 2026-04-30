@@ -230,13 +230,13 @@ struct RecommendationCard: View {
             .tabViewStyle(.page(indexDisplayMode: .always))
             .indexViewStyle(.page(backgroundDisplayMode: .always))
             .frame(maxWidth: .infinity)
-            .aspectRatio(4/3, contentMode: .fit)
+            .aspectRatio(4/5, contentMode: .fit)
             .background(Color.gray.opacity(0.2))
             .clipped()
         } else {
             SafeAsyncImage(urlString: images.first ?? "")
                 .frame(maxWidth: .infinity)
-                .aspectRatio(4/3, contentMode: .fit)
+                .aspectRatio(4/5, contentMode: .fit)
                 .background(Color.gray.opacity(0.2))
                 .clipped()
         }
