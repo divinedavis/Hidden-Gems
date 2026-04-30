@@ -29,7 +29,7 @@ Most food discovery apps optimize for the loudest crowds. Hidden Gems optimizes 
 ## Features
 
 - **Feed** — A reverse-chronological feed of recommendations from people you follow. Like, comment, save, share. Tap a post's restaurant name to open the full posting history for that spot (Top / Recent toggle); tap the address to open directions in Apple Maps. Tab bar auto-hides on scroll-down and reappears on scroll-up.
-- **Search** — Airbnb-style home stacked with one horizontal rail per curated vibe (`Date Night Spots`, `Quick Lunch`, `Late Night Eats`, `Lowkey Vibes`, `Good for Solo Dining`). Type in the field at any time to flip to a flat name/cuisine/location filter.
+- **Search** — Airbnb-style home stacked with one horizontal rail per curated vibe (`Date Night Spots`, `Quick Lunch`, `Late Night Eats`, `Lowkey Vibes`, `Good for Solo Dining`). Type in the field at any time to flip to a flat name/cuisine/location filter. Tap the location icon in the toolbar to filter by radius (1 / 2 / 5 / 10 mi from your current location, sorted by distance).
 - **Saved** — A single-tap bookmark for every place you want to try. Unsaves are instant and optimistic; the tab pulls fresh state on appear and supports pull-to-refresh.
 - **Profile** — Your grid of recommendations, your followers, and your following. Tap any user anywhere to open theirs.
 - **Comments** — Threaded comments on every post, with per-comment likes. Order is frozen on open so liking a comment doesn't yank it to the top mid-read; reopen the sheet to re-sort.
