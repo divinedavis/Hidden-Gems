@@ -132,27 +132,35 @@ struct CreatePostView: View {
                         }
                     }
 
-                    // Rating — gated on a place being picked, like Category.
-                    if selectedRestaurant != nil {
-                        VStack(alignment: .leading, spacing: 8) {
+                    // Rating — always visible so users discover that the
+                    // form requires stars. The control still records the
+                    // value when no place is picked yet; the Post button
+                    // is the actual gate (`canPost` checks both).
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
                             Text("Rating")
                                 .font(.headline)
-
-                            HStack(spacing: 8) {
-                                ForEach(1...5, id: \.self) { i in
-                                    Image(systemName: i <= rating ? "star.fill" : "star")
-                                        .font(.title2)
-                                        .foregroundStyle(i <= rating ? Color.yellow : Color.secondary)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { rating = (rating == i) ? 0 : i }
-                                }
-                            }
-
-                            if let previousRating {
-                                Text("Your last rating: \(String(repeating: "★", count: previousRating)) — tap to update")
+                            if rating == 0 {
+                                Text("Required")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                        }
+
+                        HStack(spacing: 8) {
+                            ForEach(1...5, id: \.self) { i in
+                                Image(systemName: i <= rating ? "star.fill" : "star")
+                                    .font(.title2)
+                                    .foregroundStyle(i <= rating ? Color.yellow : Color.secondary)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { rating = (rating == i) ? 0 : i }
+                            }
+                        }
+
+                        if let previousRating {
+                            Text("Your last rating: \(String(repeating: "★", count: previousRating)) — tap to update")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
 
