@@ -94,6 +94,76 @@ enum RecommenderTier: Int, CaseIterable, Identifiable {
     static func tier(for count: Int) -> RecommenderTier? {
         allCases.reversed().first { count >= $0.rawValue }
     }
+
+    /// Next tier above this one, or nil if already at the top.
+    var next: RecommenderTier? {
+        let all = RecommenderTier.allCases
+        guard let i = all.firstIndex(of: self), i + 1 < all.count else { return nil }
+        return all[i + 1]
+    }
+}
+
+/// Slim progress bar shown on the user's own profile underneath the
+/// badge. Visualises how close they are to the next tier
+/// (e.g. "18 more to Local") and caps at "Max tier" once they hit
+/// Legend so the bar doesn't sit at 100% indefinitely.
+struct RecommenderProgress: View {
+    let count: Int
+
+    private var current: RecommenderTier? { RecommenderTier.tier(for: count) }
+    private var next: RecommenderTier? {
+        if let current { return current.next }
+        // Pre-Newcomer: target is Newcomer.
+        return .newcomer
+    }
+    private var lowerBound: Int { current?.rawValue ?? 0 }
+    private var upperBound: Int { next?.rawValue ?? count }
+    private var fraction: Double {
+        guard let next else { return 1 }
+        let span = max(next.rawValue - lowerBound, 1)
+        let progress = max(0, min(count - lowerBound, span))
+        return Double(progress) / Double(span)
+    }
+    private var remaining: Int { max(0, upperBound - count) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                if let next {
+                    Text("\(remaining) to \(next.label)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Max tier reached")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.purple)
+                }
+                Spacer()
+                Text("\(count) / \(upperBound)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color(.systemGray5))
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: [(next?.tint ?? .purple).opacity(0.6),
+                                     (next?.tint ?? .purple)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
+                        .frame(width: geo.size.width * fraction)
+                        .animation(.easeOut(duration: 0.5), value: fraction)
+                }
+            }
+            .frame(height: 8)
+        }
+    }
 }
 
 /// Capsule pill shown on profile headers. Renders nothing for users

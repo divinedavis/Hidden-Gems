@@ -117,6 +117,12 @@ struct ProfileView: View {
                         RecommenderBadge(count: displayedRecommendationCount)
                             .padding(.top, 4)
 
+                        if isOwnProfile {
+                            RecommenderProgress(count: displayedRecommendationCount)
+                                .padding(.top, 8)
+                                .padding(.horizontal, 32)
+                        }
+
                         if !displayUser.bio.isEmpty {
                             Text(displayUser.bio)
                                 .font(.subheadline)
