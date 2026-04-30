@@ -75,7 +75,7 @@ struct Comment: Identifiable, Equatable {
 
 struct User: Identifiable, Equatable, Hashable {
     var id: UUID = UUID()
-    let name: String
+    var name: String
     let username: String
     var profileImageURL: String
     var bio: String = ""

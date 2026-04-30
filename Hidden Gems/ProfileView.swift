@@ -342,15 +342,22 @@ struct EditProfileSheet: View {
     @Environment(AuthManager.self) private var authManager
     @State private var pickerItem: PhotosPickerItem?
     @State private var previewImage: UIImage?
+    @State private var name: String = ""
     @State private var bio: String = ""
-    @State private var didSeedBio = false
+    @State private var didSeedFields = false
     @State private var isSaving = false
     @State private var errorMessage: String?
 
+    private let maxNameLength = 50
     private let maxBioLength = 140
 
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var hasChanges: Bool {
-        previewImage != nil || bio != authManager.currentUser.bio
+        let nameChanged = !trimmedName.isEmpty && trimmedName != authManager.currentUser.name
+        return previewImage != nil || nameChanged || bio != authManager.currentUser.bio
     }
 
     var body: some View {
@@ -402,6 +409,38 @@ struct EditProfileSheet: View {
                             .background(Color(.systemGray6))
                             .clipShape(Capsule())
                     }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Display Name")
+                                .font(.headline)
+                            Spacer()
+                            Text("\(name.count)/\(maxNameLength)")
+                                .font(.caption)
+                                .foregroundStyle(name.count > maxNameLength ? .red : .secondary)
+                        }
+
+                        TextField("Your name", text: $name)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .padding(12)
+                            .background(Color(.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(name.count > maxNameLength ? Color.red : Color.clear, lineWidth: 1)
+                            )
+                            .onChange(of: name) { _, newValue in
+                                if newValue.count > maxNameLength {
+                                    name = String(newValue.prefix(maxNameLength))
+                                }
+                            }
+
+                        Text("@\(authManager.currentUser.username) · username can't be changed")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal)
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -461,9 +500,10 @@ struct EditProfileSheet: View {
                 }
             }
             .onAppear {
-                if !didSeedBio {
+                if !didSeedFields {
+                    name = authManager.currentUser.name
                     bio = authManager.currentUser.bio
-                    didSeedBio = true
+                    didSeedFields = true
                 }
             }
             .onChange(of: pickerItem) { _, newItem in
@@ -483,10 +523,13 @@ struct EditProfileSheet: View {
         errorMessage = nil
         let trimmedBio = bio.trimmingCharacters(in: .whitespacesAndNewlines)
         let bioChanged = trimmedBio != authManager.currentUser.bio
+        let newName = trimmedName
+        let nameChanged = !newName.isEmpty && newName != authManager.currentUser.name
         Task {
             do {
                 try await authManager.updateProfile(
                     image: previewImage,
+                    name: nameChanged ? newName : nil,
                     bio: bioChanged ? trimmedBio : nil
                 )
                 isSaving = false

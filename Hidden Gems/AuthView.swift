@@ -313,7 +313,7 @@ class AuthManager {
     /// is cached in `localAvatarImage` so the profile header can
     /// render it immediately without waiting for `AsyncImage` to
     /// round-trip the new URL from the CDN.
-    func updateProfile(image: UIImage? = nil, bio: String? = nil) async throws {
+    func updateProfile(image: UIImage? = nil, name: String? = nil, bio: String? = nil) async throws {
         let authId = currentUser.id
         var uploadedImageURL: String?
         if let image {
@@ -323,39 +323,32 @@ class AuthManager {
                 ownerId: authId
             )
         }
+        let trimmedName = name.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(50)) }
         let trimmedBio = bio.map { String($0.prefix(140)) }
-        if let uploadedImageURL, let trimmedBio {
-            struct Both: Encodable { let profile_image_url: String; let bio: String }
-            try await supabase.from("users")
-                .update(Both(profile_image_url: uploadedImageURL, bio: trimmedBio))
-                .eq("id", value: authId.uuidString)
-                .execute()
-        } else if let uploadedImageURL {
-            struct Pic: Encodable { let profile_image_url: String }
-            try await supabase.from("users")
-                .update(Pic(profile_image_url: uploadedImageURL))
-                .eq("id", value: authId.uuidString)
-                .execute()
-        } else if let trimmedBio {
-            struct Bio: Encodable { let bio: String }
-            try await supabase.from("users")
-                .update(Bio(bio: trimmedBio))
-                .eq("id", value: authId.uuidString)
-                .execute()
-        } else {
-            return
-        }
+
+        var payload: [String: String] = [:]
+        if let uploadedImageURL { payload["profile_image_url"] = uploadedImageURL }
+        if let trimmedName, !trimmedName.isEmpty { payload["name"] = trimmedName }
+        if let trimmedBio { payload["bio"] = trimmedBio }
+        guard !payload.isEmpty else { return }
+
+        try await supabase.from("users")
+            .update(payload)
+            .eq("id", value: authId.uuidString)
+            .execute()
+
         var user = currentUser
         if let uploadedImageURL { user.profileImageURL = uploadedImageURL }
+        if let trimmedName, !trimmedName.isEmpty { user.name = trimmedName }
         if let trimmedBio { user.bio = trimmedBio }
         currentUser = user
         if let image { localAvatarImage = image }
     }
 
     /// Compatibility shim for callers that only want to swap the
-    /// avatar. New code should prefer `updateProfile(image:bio:)`.
+    /// avatar. New code should prefer `updateProfile(image:name:bio:)`.
     func updateProfileImage(_ image: UIImage) async throws {
-        try await updateProfile(image: image, bio: nil)
+        try await updateProfile(image: image)
     }
 
     // MARK: Sign Out
