@@ -7,25 +7,51 @@
 
 import SwiftUI
 import Supabase
+import CoreLocation
 
 struct SearchView: View {
     @State private var searchText = ""
     @State private var restaurants: [RestaurantWithVibes] = []
     @State private var hasLoadedOnce = false
+    @State private var radiusMiles: Double? = nil
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
+    @Environment(LocationManager.self) private var locationManager
 
     private var isSearching: Bool { !searchText.isEmpty }
+    private var isRadiusFiltered: Bool { radiusMiles != nil }
+
+    /// Returns nil for restaurants without coords or when no user
+    /// location is known yet — those are excluded from radius results
+    /// so we don't surface places we can't measure distance to.
+    private func distanceMiles(to r: Restaurant) -> Double? {
+        guard let userLoc = locationManager.userLocation else { return nil }
+        guard r.latitude != 0 || r.longitude != 0 else { return nil }
+        let placeLoc = CLLocation(latitude: r.latitude, longitude: r.longitude)
+        return userLoc.distance(from: placeLoc) / 1609.344
+    }
 
     var filteredRestaurants: [Restaurant] {
-        guard isSearching else { return [] }
-        return restaurants
-            .map(\.restaurant)
-            .filter { r in
+        let base: [Restaurant]
+        if isSearching {
+            base = restaurants.map(\.restaurant).filter { r in
                 r.name.localizedCaseInsensitiveContains(searchText) ||
                 r.cuisine.localizedCaseInsensitiveContains(searchText) ||
                 r.location.localizedCaseInsensitiveContains(searchText)
             }
+        } else if isRadiusFiltered {
+            base = restaurants.map(\.restaurant)
+        } else {
+            return []
+        }
+        guard let radius = radiusMiles else { return base }
+        return base
+            .compactMap { r -> (Restaurant, Double)? in
+                guard let d = distanceMiles(to: r), d <= radius else { return nil }
+                return (r, d)
+            }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
     }
 
     var body: some View {
@@ -35,7 +61,7 @@ struct SearchView: View {
                     ProgressView("Loading restaurants…")
                         .padding(.top, 80)
                         .frame(maxWidth: .infinity)
-                } else if isSearching {
+                } else if isSearching || isRadiusFiltered {
                     searchResults
                 } else {
                     vibeCarousels
@@ -45,6 +71,11 @@ struct SearchView: View {
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search places")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    radiusMenu
+                }
+            }
             .task(id: "search-load") {
                 guard !hasLoadedOnce else { return }
                 await loadRestaurants()
@@ -52,15 +83,41 @@ struct SearchView: View {
         }
     }
 
+    private var radiusMenu: some View {
+        Menu {
+            Button {
+                radiusMiles = nil
+            } label: {
+                Label("Any distance", systemImage: radiusMiles == nil ? "checkmark" : "")
+            }
+            ForEach([1.0, 2.0, 5.0, 10.0], id: \.self) { miles in
+                Button {
+                    selectRadius(miles)
+                } label: {
+                    let isCurrent = radiusMiles == miles
+                    Label("Within \(Int(miles)) mi", systemImage: isCurrent ? "checkmark" : "")
+                }
+            }
+        } label: {
+            Image(systemName: isRadiusFiltered ? "location.fill" : "location")
+        }
+    }
+
+    private func selectRadius(_ miles: Double) {
+        radiusMiles = miles
+        // Nudge CoreLocation in case the app launched before the user
+        // granted permission (e.g. they tapped "Don't Allow" first run
+        // but now want near-me search).
+        if locationManager.authorizationStatus == .notDetermined ||
+           locationManager.authorizationStatus == .denied {
+            locationManager.requestPermission()
+        }
+    }
+
     @ViewBuilder
     private var searchResults: some View {
         if filteredRestaurants.isEmpty {
-            ContentUnavailableView(
-                "No matches",
-                systemImage: "magnifyingglass",
-                description: Text("Try a different search.")
-            )
-            .padding(.top, 60)
+            emptyResultsView
         } else {
             LazyVStack(spacing: 12) {
                 ForEach(filteredRestaurants) { restaurant in
@@ -73,6 +130,42 @@ struct SearchView: View {
                 }
             }
             .padding()
+        }
+    }
+
+    @ViewBuilder
+    private var emptyResultsView: some View {
+        if isRadiusFiltered, locationManager.userLocation == nil {
+            switch locationManager.authorizationStatus {
+            case .denied, .restricted:
+                ContentUnavailableView(
+                    "Location access off",
+                    systemImage: "location.slash",
+                    description: Text("Enable location in Settings to search nearby.")
+                )
+                .padding(.top, 60)
+            default:
+                ContentUnavailableView(
+                    "Finding your location…",
+                    systemImage: "location.circle",
+                    description: Text("This only takes a moment.")
+                )
+                .padding(.top, 60)
+            }
+        } else if isRadiusFiltered, !isSearching {
+            ContentUnavailableView(
+                "Nothing within \(Int(radiusMiles ?? 0)) mi",
+                systemImage: "mappin.slash",
+                description: Text("Try a wider radius.")
+            )
+            .padding(.top, 60)
+        } else {
+            ContentUnavailableView(
+                "No matches",
+                systemImage: "magnifyingglass",
+                description: Text("Try a different search.")
+            )
+            .padding(.top, 60)
         }
     }
 
