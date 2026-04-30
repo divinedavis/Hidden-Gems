@@ -361,6 +361,16 @@ class PostViewsManager {
 class RecommendationsManager {
     var recommendations: [Recommendation] = []
     var isLoading = false
+    var isLoadingMore = false
+    /// `false` once a fetch returns fewer than `pageSize` rows — the
+    /// FeedView reads this to stop firing pagination requests at the
+    /// bottom of the list.
+    var hasMore = true
+
+    /// Posts per page. 15 keeps initial-payload + decode cheap and
+    /// matches the visible card count on a typical iPhone scroll —
+    /// the next page lands before the user runs out of cards.
+    private let pageSize = 15
 
     func fetchFeed(
         likesManager: LikesManager? = nil,
@@ -368,36 +378,73 @@ class RecommendationsManager {
         postViewsManager: PostViewsManager? = nil,
         followManager: FollowManager? = nil
     ) async {
-        isLoading = true
+        await loadPage(
+            reset: true,
+            likesManager: likesManager,
+            commentsManager: commentsManager,
+            postViewsManager: postViewsManager,
+            followManager: followManager
+        )
+    }
+
+    /// Called from each card's `.onAppear`. When the visible item is
+    /// within the last few cards of the loaded list, kicks off the
+    /// next page. Guards against duplicate / mid-flight fetches and
+    /// stops once `hasMore` is false.
+    func loadMoreIfNeeded(
+        currentItem: Recommendation,
+        likesManager: LikesManager? = nil,
+        commentsManager: CommentsManager? = nil,
+        postViewsManager: PostViewsManager? = nil,
+        followManager: FollowManager? = nil
+    ) async {
+        guard hasMore, !isLoading, !isLoadingMore else { return }
+        guard let idx = recommendations.firstIndex(where: { $0.id == currentItem.id }) else { return }
+        let prefetchThreshold = max(0, recommendations.count - 5)
+        guard idx >= prefetchThreshold else { return }
+        await loadPage(
+            reset: false,
+            likesManager: likesManager,
+            commentsManager: commentsManager,
+            postViewsManager: postViewsManager,
+            followManager: followManager
+        )
+    }
+
+    private func loadPage(
+        reset: Bool,
+        likesManager: LikesManager?,
+        commentsManager: CommentsManager?,
+        postViewsManager: PostViewsManager?,
+        followManager: FollowManager?
+    ) async {
+        if reset { isLoading = true } else { isLoadingMore = true }
+        defer {
+            if reset { isLoading = false } else { isLoadingMore = false }
+        }
+
+        let from = reset ? 0 : recommendations.count
+        let to = from + pageSize - 1
+
         do {
-            // Cap the initial payload — at 1k+ posts the full table
-            // was slow to transfer + decode on device. The client can
-            // always pull-to-refresh for the newest 200.
             let posts: [SupabaseFeedPost] = try await supabase
                 .from("feed")
                 .select()
                 .order("created_at", ascending: false)
-                .limit(200)
+                .range(from: from, to: to)
                 .execute()
                 .value
 
-            // Three-tier sort, chronological desc within each tier.
-            // Top: unseen AND liked by someone you follow.
-            // Middle: unseen.
-            // Bottom: seen (fallback so the feed never goes blank).
-            // Follow-weighted elevation is temporarily disabled — the
-            // .in() filter on a large followed-user set was tanking
-            // the feed load. Re-add once we have a dedicated endpoint
-            // that returns just the post-id set.
-            // A liked post counts as seen — once you've engaged with it
-            // we don't want it back in the unseen queue. Covers historical
-            // likes that pre-date the post_views table too.
+            // Three-tier sort within the page only — applying the sort
+            // globally would require holding all posts in memory, which
+            // is exactly what pagination is undoing. Newest unseen surface
+            // first, then unseen-social, then seen as fallback.
             var seen = postViewsManager?.viewedPostIds ?? []
             if let liked = likesManager?.likedRecommendations {
                 seen.formUnion(liked)
             }
             let socialPostIds: Set<UUID> = []
-            _ = followManager // silence unused-parameter warning
+            _ = followManager
             func tier(_ post: SupabaseFeedPost) -> Int {
                 if seen.contains(post.id) { return 2 }
                 if socialPostIds.contains(post.id) { return 0 }
@@ -408,7 +455,19 @@ class RecommendationsManager {
                 if ta != tb { return ta < tb }
                 return a.createdAt > b.createdAt
             }
-            recommendations = ordered.map { $0.toRecommendation() }
+            let newRecs = ordered.map { $0.toRecommendation() }
+
+            if reset {
+                recommendations = newRecs
+            } else {
+                // Defensive: filter dupes by id in case a new post slid
+                // in between page fetches and shifted the offsets.
+                let existing = Set(recommendations.map(\.id))
+                recommendations.append(contentsOf: newRecs.filter { !existing.contains($0.id) })
+            }
+
+            hasMore = posts.count >= pageSize
+
             likesManager?.hydrate(from: posts)
             // Just hydrate the counts off the feed view — actual comment
             // bodies are fetched lazily per-post when a user opens the
@@ -418,7 +477,6 @@ class RecommendationsManager {
         } catch {
             debugLog("Feed fetch error", error)
         }
-        isLoading = false
     }
 
     func addRecommendation(_ recommendation: Recommendation) {

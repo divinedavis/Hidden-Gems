@@ -31,6 +31,22 @@ struct FeedView: View {
                     ForEach(recommendationsManager.recommendations) { recommendation in
                         RecommendationCard(recommendation: recommendation)
                             .padding(.bottom, 12)
+                            .onAppear {
+                                Task {
+                                    await recommendationsManager.loadMoreIfNeeded(
+                                        currentItem: recommendation,
+                                        likesManager: likesManager,
+                                        commentsManager: commentsManager,
+                                        postViewsManager: postViewsManager,
+                                        followManager: followManager
+                                    )
+                                }
+                            }
+                    }
+                    if recommendationsManager.isLoadingMore {
+                        ProgressView()
+                            .padding(.vertical, 16)
+                            .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal)
