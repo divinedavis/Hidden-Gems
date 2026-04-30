@@ -307,8 +307,17 @@ struct RecommendationCard: View {
 
                     Spacer(minLength: 6)
 
-                    RatingBadge(rating: recommendation.restaurant.rating, font: .subheadline)
-                        .fixedSize()
+                    // Show the poster's own stars when available (the
+                    // create form requires a rating going forward), and
+                    // fall back to the community aggregate for legacy
+                    // posts that predate the requirement.
+                    if let userRating = recommendation.userRating {
+                        UserRatingStars(rating: userRating, font: .subheadline)
+                            .fixedSize()
+                    } else {
+                        RatingBadge(rating: recommendation.restaurant.rating, font: .subheadline)
+                            .fixedSize()
+                    }
                 }
 
                 Text(recommendation.restaurant.location)

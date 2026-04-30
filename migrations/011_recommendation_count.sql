@@ -57,6 +57,10 @@ create trigger posts_bump_user_count
 --    The Swift client decodes this view for both own-profile load
 --    (AuthManager.loadProfile) and other-profile live counts
 --    (ProfileView.loadLiveCounts).
+-- recommendation_count is appended at the end because CREATE OR
+-- REPLACE VIEW cannot reorder existing columns, only append new
+-- ones. Re-creating from scratch would invalidate any downstream
+-- dependent views.
 create or replace view user_profiles as
   select
     u.id,
@@ -66,9 +70,9 @@ create or replace view user_profiles as
     u.profile_image_url,
     u.bio,
     u.created_at,
-    u.recommendation_count,
     (select count(*) from follows f where f.following_id = u.id) as followers_count,
-    (select count(*) from follows f where f.follower_id  = u.id) as following_count
+    (select count(*) from follows f where f.follower_id  = u.id) as following_count,
+    u.recommendation_count
   from users u;
 
 -- 5. View used by Search's "Top Recommenders" filter. For each

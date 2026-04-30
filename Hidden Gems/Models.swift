@@ -39,6 +39,11 @@ struct Recommendation: Identifiable {
     /// back to the restaurant's own cover photo. First entry doubles
     /// as the profile-grid thumbnail and comments-sheet header.
     var imageURLs: [String] = []
+    /// The poster's own 1–5 star rating for this place at the time
+    /// they posted (joined from the ratings table on the feed view).
+    /// Nil for legacy posts that predate the rating requirement —
+    /// the card falls back to the restaurant's community aggregate.
+    var userRating: Int? = nil
 }
 
 // Curated vibe suggestions surfaced in the tag picker + Search
@@ -155,6 +160,9 @@ struct SupabaseFeedPost: Codable {
     let likeCount: Int
     let commentCount: Int
     let vibeTags: [String]?
+    /// Optional so the decode succeeds against deploys of the feed
+    /// view that predate migration 012.
+    let userRating: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, note, username, cuisine, location, rating
@@ -170,6 +178,7 @@ struct SupabaseFeedPost: Codable {
         case likeCount = "like_count"
         case commentCount = "comment_count"
         case vibeTags = "vibe_tags"
+        case userRating = "user_rating"
     }
 
     func toRecommendation() -> Recommendation {
@@ -203,6 +212,7 @@ struct SupabaseFeedPost: Codable {
         )
         rec.id = id
         rec.imageURLs = imageUrls ?? []
+        rec.userRating = userRating
         return rec
     }
 }
