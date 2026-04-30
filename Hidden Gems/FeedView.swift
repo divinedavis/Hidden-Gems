@@ -172,7 +172,6 @@ struct RecommendationCard: View {
     @Environment(CommentsManager.self) private var commentsManager
     @Environment(AuthManager.self) private var authManager
     @Environment(PostViewsManager.self) private var postViewsManager
-    @Environment(\.openURL) private var openURL
     @State private var showingComments = false
     @State private var dwellTask: Task<Void, Never>?
 
@@ -184,26 +183,6 @@ struct RecommendationCard: View {
     /// to the bottom of the next feed refresh.
     private func markSeen() {
         postViewsManager.markViewed(recommendation.id, by: authManager.currentUser.id)
-    }
-
-    /// Opens Apple Maps with the restaurant prefilled as the directions
-    /// destination. Prefers stored coordinates over a string address
-    /// since generic city names sometimes geocode to the wrong place.
-    fileprivate func openInMaps(_ restaurant: Restaurant) {
-        var components = URLComponents(string: "http://maps.apple.com/")!
-        var items: [URLQueryItem] = []
-        if restaurant.latitude != 0 || restaurant.longitude != 0 {
-            items.append(URLQueryItem(name: "daddr",
-                                      value: "\(restaurant.latitude),\(restaurant.longitude)"))
-            items.append(URLQueryItem(name: "q", value: restaurant.name))
-        } else if !restaurant.location.isEmpty {
-            items.append(URLQueryItem(name: "daddr",
-                                      value: "\(restaurant.name), \(restaurant.location)"))
-        } else {
-            return
-        }
-        components.queryItems = items
-        if let url = components.url { openURL(url) }
     }
 
     /// The photos to show in the card, in order. Prefers the post's
@@ -276,8 +255,13 @@ struct RecommendationCard: View {
             // Restaurant image(s). Multi-image posts render as a
             // paged TabView so the user can swipe left/right between
             // photos; single-image posts stay a plain SafeAsyncImage
-            // to avoid the TabView's layout overhead.
+            // to avoid the TabView's layout overhead. The negative
+            // horizontal padding cancels the feed's outer
+            // `.padding(.horizontal)` so the photo runs edge-to-edge
+            // (Instagram-style) while the surrounding text stays
+            // inset.
             photoCarousel
+                .padding(.horizontal, -16)
 
             // Restaurant info
             VStack(alignment: .leading, spacing: 4) {
@@ -319,14 +303,8 @@ struct RecommendationCard: View {
                     .fixedSize()
                 }
 
-                Text(recommendation.restaurant.location)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .contentShape(Rectangle())
-                    .onTapGesture { openInMaps(recommendation.restaurant) }
-
                 // Vibe tags — horizontally scrollable strip sitting
-                // between the location row and the caption.
+                // directly under the restaurant meta row.
                 VibeTagStrip(tags: recommendation.vibeTags)
                     .padding(.top, 6)
 
