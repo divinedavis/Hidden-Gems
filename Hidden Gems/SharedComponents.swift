@@ -150,6 +150,11 @@ struct SafeAsyncImage: View {
 /// post's caption.
 struct RestaurantMetaInfo: View {
     let restaurant: Restaurant
+    /// When false, the location renders as plain text instead of a
+    /// "tap to open in Maps" button. Used by list rows that are
+    /// themselves tappable (e.g. search results), where a nested
+    /// button hijacks the row tap and opens Maps unexpectedly.
+    var locationIsTappable: Bool = true
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -165,14 +170,20 @@ struct RestaurantMetaInfo: View {
                     .foregroundStyle(.secondary)
             }
 
-            Button(action: openInMaps) {
+            if locationIsTappable {
+                Button(action: openInMaps) {
+                    Text(restaurant.location)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(restaurant.location.isEmpty &&
+                          restaurant.latitude == 0 && restaurant.longitude == 0)
+            } else {
                 Text(restaurant.location)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .disabled(restaurant.location.isEmpty &&
-                      restaurant.latitude == 0 && restaurant.longitude == 0)
         }
     }
 

@@ -64,7 +64,12 @@ struct SearchView: View {
         } else {
             LazyVStack(spacing: 12) {
                 ForEach(filteredRestaurants) { restaurant in
-                    RestaurantRow(restaurant: restaurant)
+                    NavigationLink {
+                        RestaurantDetailView(restaurant: restaurant)
+                    } label: {
+                        RestaurantRow(restaurant: restaurant)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding()
@@ -268,7 +273,7 @@ struct RestaurantRow: View {
                 Text(restaurant.name)
                     .font(.headline)
 
-                RestaurantMetaInfo(restaurant: restaurant)
+                RestaurantMetaInfo(restaurant: restaurant, locationIsTappable: false)
 
                 RatingBadge(rating: restaurant.rating)
             }
