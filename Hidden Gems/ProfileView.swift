@@ -17,6 +17,7 @@ struct ProfileView: View {
     @State private var showingCreatePost = false
     @State private var liveFollowersCount: Int?
     @State private var liveFollowingCount: Int?
+    @State private var liveRecommendationCount: Int?
     @State private var wasFollowingAtLoad: Bool = false
     @Environment(SavedRestaurantsManager.self) private var savedManager
     @Environment(LikesManager.self) private var likesManager
@@ -54,6 +55,16 @@ struct ProfileView: View {
     private var displayedFollowingCount: Int {
         if isOwnProfile { return followManager.followedUsers.count }
         return liveFollowingCount ?? displayUser.followingCount
+    }
+
+    /// Prefer the live count fetched from `user_profiles`. Fall back
+    /// to whatever was on the User struct (from the feed-row or auth
+    /// manager); the loaded grid count is also a reasonable floor for
+    /// own-profile while the live fetch is in flight.
+    private var displayedRecommendationCount: Int {
+        if let live = liveRecommendationCount { return live }
+        if isOwnProfile { return max(displayUser.recommendationCount, myRecommendations.count) }
+        return displayUser.recommendationCount
     }
     
     var body: some View {
@@ -103,6 +114,9 @@ struct ProfileView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
+                        RecommenderBadge(count: displayedRecommendationCount)
+                            .padding(.top, 4)
+
                         if !displayUser.bio.isEmpty {
                             Text(displayUser.bio)
                                 .font(.subheadline)
@@ -112,11 +126,11 @@ struct ProfileView: View {
                                 .padding(.horizontal, 32)
                         }
                     }
-                    
+
                     HStack(spacing: 40) {
                         StatView(count: displayedFollowersCount, label: "Followers")
                         StatView(count: displayedFollowingCount, label: "Following")
-                        StatView(count: myRecommendations.count, label: "Recommendations")
+                        StatView(count: displayedRecommendationCount, label: "Recommendations")
                     }
                     .padding(.top, 8)
                     
@@ -261,15 +275,22 @@ struct ProfileView: View {
         struct Row: Decodable {
             let followersCount: Int?
             let followingCount: Int?
+            let recommendationCount: Int?
             enum CodingKeys: String, CodingKey {
                 case followersCount = "followers_count"
                 case followingCount = "following_count"
+                case recommendationCount = "recommendation_count"
             }
         }
         do {
+            // Select * because recommendation_count was added in
+            // migration 011 — older deploys of the user_profiles view
+            // won't expose it, and an explicit column list would 400
+            // until the migration is applied. With select() the column
+            // is absent client-side and decodes as nil.
             let rows: [Row] = try await supabase
                 .from("user_profiles")
-                .select("followers_count, following_count")
+                .select()
                 .eq("id", value: displayUser.id.uuidString)
                 .limit(1)
                 .execute()
@@ -277,6 +298,7 @@ struct ProfileView: View {
             if let row = rows.first {
                 liveFollowersCount = row.followersCount ?? 0
                 liveFollowingCount = row.followingCount ?? 0
+                liveRecommendationCount = row.recommendationCount
             }
         } catch {
             debugLog("Profile counts fetch error", error)

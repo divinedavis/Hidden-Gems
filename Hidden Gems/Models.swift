@@ -81,6 +81,11 @@ struct User: Identifiable, Equatable, Hashable {
     var bio: String = ""
     let followersCount: Int
     let followingCount: Int
+    /// Lifetime count of posts the user has made. Drives the
+    /// recommender-tier badge on profiles and the Search "Top
+    /// Recommenders" filter. Backed by `users.recommendation_count`,
+    /// kept in sync by the `posts_bump_user_count` trigger.
+    var recommendationCount: Int = 0
 
     static func == (lhs: User, rhs: User) -> Bool {
         lhs.id == rhs.id

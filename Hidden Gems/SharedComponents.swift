@@ -41,6 +41,84 @@ func shortRelative(from date: Date, now: Date = Date()) -> String {
     return "\(years)y"
 }
 
+// MARK: - Recommender Badge
+
+/// Tiered recognition for prolific posters. Thresholds were chosen
+/// to give early users a near-term win (Newcomer at the first post,
+/// Regular at 10) while leaving headroom for power users to chase
+/// (Tastemaker at 100, Legend at 500). The Search "Top Recommenders"
+/// filter surfaces restaurants posted by users at or above a chosen
+/// tier, turning the badge into a discovery signal beyond a vanity
+/// label.
+enum RecommenderTier: Int, CaseIterable, Identifiable {
+    case newcomer  = 1
+    case regular   = 10
+    case local     = 50
+    case tastemaker = 100
+    case legend    = 500
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .newcomer:   return "Newcomer"
+        case .regular:    return "Regular"
+        case .local:      return "Local"
+        case .tastemaker: return "Tastemaker"
+        case .legend:     return "Legend"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .newcomer:   return "sparkle"
+        case .regular:    return "fork.knife"
+        case .local:      return "mappin.circle.fill"
+        case .tastemaker: return "star.circle.fill"
+        case .legend:     return "crown.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .newcomer:   return .gray
+        case .regular:    return .blue
+        case .local:      return .green
+        case .tastemaker: return .orange
+        case .legend:     return .purple
+        }
+    }
+
+    /// Highest tier the count satisfies, or nil if the user has zero
+    /// recommendations (no badge yet).
+    static func tier(for count: Int) -> RecommenderTier? {
+        allCases.reversed().first { count >= $0.rawValue }
+    }
+}
+
+/// Capsule pill shown on profile headers. Renders nothing for users
+/// with zero posts so brand-new accounts don't display a hollow
+/// badge before they've earned anything.
+struct RecommenderBadge: View {
+    let count: Int
+
+    var body: some View {
+        if let tier = RecommenderTier.tier(for: count) {
+            HStack(spacing: 4) {
+                Image(systemName: tier.systemImage)
+                    .font(.caption2)
+                Text(tier.label)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(tier.tint.opacity(0.15), in: Capsule())
+            .foregroundStyle(tier.tint)
+        }
+    }
+}
+
 /// Circular profile-picture view with a gray person.fill placeholder
 /// fallback. Prefers the current user's in-memory `localAvatarImage`
 /// when `user` is the signed-in account so a freshly uploaded avatar

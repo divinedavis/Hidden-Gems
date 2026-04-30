@@ -210,11 +210,13 @@ class AuthManager {
                 let bio: String?
                 let followersCount: Int?
                 let followingCount: Int?
+                let recommendationCount: Int?
                 enum CodingKeys: String, CodingKey {
                     case id, name, username, bio
                     case profileImageUrl = "profile_image_url"
                     case followersCount = "followers_count"
                     case followingCount = "following_count"
+                    case recommendationCount = "recommendation_count"
                 }
             }
 
@@ -239,6 +241,7 @@ class AuthManager {
                     followingCount: row.followingCount ?? 0
                 )
                 user.id = row.id
+                user.recommendationCount = row.recommendationCount ?? 0
                 currentUser = user
                 isSignedIn = true
             } else {
