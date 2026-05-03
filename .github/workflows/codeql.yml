@@ -1,0 +1,77 @@
+name: CodeQL
+
+# Static analysis on every push to main, every PR into main, and a
+# weekly catch-all so a CVE published mid-week against an upstream
+# pattern still surfaces without waiting for the next commit.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 7 * * 1"  # Mondays 07:00 UTC
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    # macos-15 has Xcode 16 preinstalled, which is what the project's
+    # SwiftPM dependencies (Supabase 2.x, swift-crypto) target.
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [swift]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_16.app
+
+      - name: Stub Config.swift
+        # Config.swift is gitignored (holds the Supabase publishable
+        # key for local dev). CodeQL just needs the project to
+        # compile — drop in a stub so the build resolves Config.* and
+        # autobuild succeeds. The values don't matter for static
+        # analysis.
+        run: |
+          cat > "Hidden Gems/Config.swift" <<'SWIFT'
+          enum Config {
+              static let supabaseURL = "https://example.supabase.co"
+              static let supabaseKey = "ci-stub-key"
+          }
+          SWIFT
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Build
+        # Autobuild has trouble with SwiftUI iOS apps; explicit
+        # xcodebuild against an iOS Simulator destination is more
+        # reliable. CodeQL's Swift extractor wraps the compile.
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "Hidden Gems.xcodeproj" \
+            -scheme "Hidden Gems" \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build/codeql \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build | xcpretty || true
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
