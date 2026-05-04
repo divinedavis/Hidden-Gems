@@ -15,6 +15,19 @@ import os
 
 private let authLogger = Logger(subsystem: "com.divinedavis.hiddengems", category: "auth")
 
+/// Surfaced from `AuthManager.updateProfile` so the caller can map a
+/// unique-violation on `users.username` to a friendly inline message
+/// instead of the raw PostgREST error.
+enum ProfileUpdateError: Error, LocalizedError {
+    case usernameTaken
+
+    var errorDescription: String? {
+        switch self {
+        case .usernameTaken: return "That username is taken. Try a different one."
+        }
+    }
+}
+
 @Observable
 class AuthManager {
     var isSignedIn = false
@@ -316,7 +329,12 @@ class AuthManager {
     /// is cached in `localAvatarImage` so the profile header can
     /// render it immediately without waiting for `AsyncImage` to
     /// round-trip the new URL from the CDN.
-    func updateProfile(image: UIImage? = nil, name: String? = nil, bio: String? = nil) async throws {
+    func updateProfile(
+        image: UIImage? = nil,
+        name: String? = nil,
+        username: String? = nil,
+        bio: String? = nil
+    ) async throws {
         let authId = currentUser.id
         var uploadedImageURL: String?
         if let image {
@@ -328,24 +346,72 @@ class AuthManager {
         }
         let trimmedName = name.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(50)) }
         let trimmedBio = bio.map { String($0.prefix(140)) }
+        // Stored usernames in this database are inconsistently
+        // prefixed with "@" (early sign-up flow) vs. bare
+        // ("user_xxxx" self-heal rows). Normalise on write by
+        // always storing with the leading "@", so the canonical
+        // form going forward is "@handle". Display sites already
+        // render whatever's stored as-is.
+        let normalisedUsername = username.map { raw -> String in
+            let bare = raw.trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+                .prefix(20)
+            return "@\(bare)"
+        }
 
         var payload: [String: String] = [:]
         if let uploadedImageURL { payload["profile_image_url"] = uploadedImageURL }
         if let trimmedName, !trimmedName.isEmpty { payload["name"] = trimmedName }
+        if let normalisedUsername, normalisedUsername != "@" { payload["username"] = normalisedUsername }
         if let trimmedBio { payload["bio"] = trimmedBio }
         guard !payload.isEmpty else { return }
 
-        try await supabase.from("users")
-            .update(payload)
-            .eq("id", value: authId.uuidString)
-            .execute()
+        do {
+            try await supabase.from("users")
+                .update(payload)
+                .eq("id", value: authId.uuidString)
+                .execute()
+        } catch {
+            // Postgres `unique_violation` is 23505. The Supabase Swift
+            // client surfaces it as a generic error whose description
+            // contains the code; defense-in-depth alongside the
+            // EditProfileSheet's pre-save availability check.
+            let raw = String(describing: error)
+            if raw.contains("23505") || raw.localizedCaseInsensitiveContains("duplicate key") {
+                throw ProfileUpdateError.usernameTaken
+            }
+            throw error
+        }
 
         var user = currentUser
         if let uploadedImageURL { user.profileImageURL = uploadedImageURL }
         if let trimmedName, !trimmedName.isEmpty { user.name = trimmedName }
+        if let normalisedUsername, normalisedUsername != "@" { user.username = normalisedUsername }
         if let trimmedBio { user.bio = trimmedBio }
         currentUser = user
         if let image { localAvatarImage = image }
+    }
+
+    /// Live availability lookup against the users table. Normalises
+    /// both forms (bare + "@"-prefixed) and excludes the calling
+    /// user's own row so re-entering your current handle reads as
+    /// available, not taken.
+    func isUsernameAvailable(_ candidate: String) async throws -> Bool {
+        let bare = candidate
+            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+            .lowercased()
+        guard !bare.isEmpty else { return false }
+        struct Row: Decodable { let id: UUID }
+        let rows: [Row] = try await supabase
+            .from("users")
+            .select("id")
+            .or("username.ilike.\(bare),username.ilike.@\(bare)")
+            .neq("id", value: currentUser.id.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        return rows.isEmpty
     }
 
     /// Compatibility shim for callers that only want to swap the

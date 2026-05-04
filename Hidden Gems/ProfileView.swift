@@ -371,21 +371,61 @@ struct EditProfileSheet: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var previewImage: UIImage?
     @State private var name: String = ""
+    @State private var username: String = ""
     @State private var bio: String = ""
     @State private var didSeedFields = false
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var usernameStatus: UsernameStatus = .idle
+    @State private var usernameCheckTask: Task<Void, Never>?
 
     private let maxNameLength = 50
+    private let maxUsernameLength = 20
+    private let minUsernameLength = 3
     private let maxBioLength = 140
+
+    /// Status of the live availability check on the username field.
+    /// Drives both the inline indicator (spinner / check / x) and the
+    /// Save-button gating.
+    enum UsernameStatus: Equatable {
+        case idle           // unchanged from current, or empty
+        case invalid(String)
+        case checking
+        case available
+        case taken
+    }
 
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// User's typed username with leading "@" stripped, lowercased,
+    /// trimmed. The canonical form for both validation and the live
+    /// availability lookup.
+    private var bareUsername: String {
+        username
+            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+            .lowercased()
+    }
+
+    /// The user's existing username with the same normalisation
+    /// applied. We treat reverting the field to its current value as
+    /// "no change" so the Save button doesn't light up.
+    private var currentBareUsername: String {
+        authManager.currentUser.username
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+            .lowercased()
+    }
+
+    private var usernameChanged: Bool {
+        !bareUsername.isEmpty && bareUsername != currentBareUsername
+    }
+
     private var hasChanges: Bool {
         let nameChanged = !trimmedName.isEmpty && trimmedName != authManager.currentUser.name
-        return previewImage != nil || nameChanged || bio != authManager.currentUser.bio
+        let usernameSavable = usernameChanged && usernameStatus == .available
+        return previewImage != nil || nameChanged || usernameSavable || bio != authManager.currentUser.bio
     }
 
     var body: some View {
@@ -464,9 +504,51 @@ struct EditProfileSheet: View {
                                 }
                             }
 
-                        Text("\(authManager.currentUser.username) · username can't be changed")
+                    }
+                    .padding(.horizontal)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Username")
+                                .font(.headline)
+                            Spacer()
+                            usernameStatusIndicator
+                        }
+
+                        HStack(spacing: 4) {
+                            Text("@")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                            TextField("yourhandle", text: $username)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.asciiCapable)
+                        }
+                        .padding(12)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(usernameBorderColor, lineWidth: 1)
+                        )
+                        .onChange(of: username) { _, newValue in
+                            // Strip any "@" the user pasted/typed and
+                            // trim length so they can't blow past the
+                            // 20-char cap from a paste.
+                            var cleaned = newValue.replacingOccurrences(of: "@", with: "")
+                            if cleaned.count > maxUsernameLength {
+                                cleaned = String(cleaned.prefix(maxUsernameLength))
+                            }
+                            if cleaned != newValue {
+                                username = cleaned
+                                return
+                            }
+                            scheduleUsernameCheck()
+                        }
+
+                        Text(usernameHelperText)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(usernameHelperColor)
                     }
                     .padding(.horizontal)
 
@@ -530,6 +612,7 @@ struct EditProfileSheet: View {
             .onAppear {
                 if !didSeedFields {
                     name = authManager.currentUser.name
+                    username = currentBareUsername
                     bio = authManager.currentUser.bio
                     didSeedFields = true
                 }
@@ -553,18 +636,142 @@ struct EditProfileSheet: View {
         let bioChanged = trimmedBio != authManager.currentUser.bio
         let newName = trimmedName
         let nameChanged = !newName.isEmpty && newName != authManager.currentUser.name
+        let usernameToSubmit: String? = (usernameChanged && usernameStatus == .available) ? bareUsername : nil
         Task {
             do {
                 try await authManager.updateProfile(
                     image: previewImage,
                     name: nameChanged ? newName : nil,
+                    username: usernameToSubmit,
                     bio: bioChanged ? trimmedBio : nil
                 )
                 isSaving = false
                 dismiss()
+            } catch let err as ProfileUpdateError {
+                isSaving = false
+                if err == .usernameTaken {
+                    usernameStatus = .taken
+                }
+                errorMessage = err.errorDescription
             } catch {
                 isSaving = false
                 errorMessage = "Could not save profile. \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Username helpers
+
+    /// Right-aligned indicator next to the "Username" label. Shows a
+    /// spinner while a check is in flight, a green check when the
+    /// handle is free, a red x when it's taken or formatted wrong.
+    @ViewBuilder
+    private var usernameStatusIndicator: some View {
+        switch usernameStatus {
+        case .idle:
+            Text("\(bareUsername.count)/\(maxUsernameLength)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .invalid:
+            Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        case .checking:
+            ProgressView().controlSize(.small)
+        case .available:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .taken:
+            Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        }
+    }
+
+    private var usernameBorderColor: Color {
+        switch usernameStatus {
+        case .invalid, .taken: return .red
+        case .available: return .green
+        default: return .clear
+        }
+    }
+
+    private var usernameHelperText: String {
+        switch usernameStatus {
+        case .idle:
+            return "Letters, numbers, and underscores. \(minUsernameLength)–\(maxUsernameLength) characters."
+        case .invalid(let reason):
+            return reason
+        case .checking:
+            return "Checking…"
+        case .available:
+            return "Looks good — @\(bareUsername) is available."
+        case .taken:
+            return "@\(bareUsername) is taken."
+        }
+    }
+
+    private var usernameHelperColor: Color {
+        switch usernameStatus {
+        case .invalid, .taken: return .red
+        case .available: return .green
+        default: return .secondary
+        }
+    }
+
+    /// Validates the current `bareUsername` against format rules
+    /// (length + allowed characters + can't start with a digit) and
+    /// returns the failure reason for the helper line, or nil when
+    /// the input is structurally valid.
+    private func validationReason(for handle: String) -> String? {
+        if handle.isEmpty { return nil }  // treated as idle, not invalid
+        if handle.count < minUsernameLength {
+            return "At least \(minUsernameLength) characters."
+        }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_")
+        if handle.unicodeScalars.contains(where: { !allowed.contains($0) }) {
+            return "Only letters, numbers, and underscores."
+        }
+        if let first = handle.first, first.isNumber {
+            return "Can't start with a number."
+        }
+        return nil
+    }
+
+    /// Cancels any in-flight check, validates locally, then schedules
+    /// a 400ms-debounced live availability lookup. Reverting the
+    /// field to the user's current handle short-circuits to .idle so
+    /// the Save button stays disabled (no actual change to write).
+    private func scheduleUsernameCheck() {
+        usernameCheckTask?.cancel()
+        let handle = bareUsername
+
+        if handle.isEmpty {
+            usernameStatus = .idle
+            return
+        }
+        if handle == currentBareUsername {
+            usernameStatus = .idle
+            return
+        }
+        if let reason = validationReason(for: handle) {
+            usernameStatus = .invalid(reason)
+            return
+        }
+
+        usernameStatus = .checking
+        usernameCheckTask = Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            // The user may have kept typing during the debounce; only
+            // commit a result if the field still matches what we
+            // queried for.
+            let queriedHandle = handle
+            do {
+                let available = try await authManager.isUsernameAvailable(queriedHandle)
+                guard !Task.isCancelled, queriedHandle == bareUsername else { return }
+                usernameStatus = available ? .available : .taken
+            } catch {
+                guard !Task.isCancelled, queriedHandle == bareUsername else { return }
+                debugLog("Username availability check failed", error)
+                // Don't block the user — let them try to save and
+                // catch the 23505 there if it actually conflicts.
+                usernameStatus = .available
             }
         }
     }
