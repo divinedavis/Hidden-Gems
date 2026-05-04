@@ -177,10 +177,7 @@ struct ProfileView: View {
                     }
                 }
                 .padding(.top)
-                
-                Divider()
-                    .padding(.horizontal)
-                
+
                 // Recommendations Section
                 VStack(alignment: .leading, spacing: 12) {
                     Text(isOwnProfile ? "My Recommendations" : "Recommendations")
